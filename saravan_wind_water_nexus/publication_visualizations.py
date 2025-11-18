@@ -136,6 +136,8 @@ class PublicationVisualizer:
         Updated based on correct architecture:
         - VAWT removed
         - Gas connects to: CHP, Boiler, AND Power Network (PN)
+        - Biogas Bus added: Digester → Biogas Bus → CHP/Boiler (dual-fuel)
+        - CHP and Boiler can use BOTH natural gas AND biogas (methane content)
         - Correct water flow: GW→Pump→Primary GW→(Agr | Secondary GW→Urban)
         - Wastewater: Urban→Primary WW→(Agr | Secondary WW→Urban)
         - Turbines connect to electricity bus, not directly to battery
@@ -163,6 +165,7 @@ class PublicationVisualizer:
             'bladeless': (25, 75),
             'power_network': (25, 50),  # Gas-to-electricity (PN)
             'bus_elec': (40, 80),  # Electricity bus
+            'bus_biogas': (50, 28),  # Biogas bus (from digester)
             'chp': (25, 38),
             'boiler': (25, 28),
 
@@ -224,11 +227,18 @@ class PublicationVisualizer:
                 ax.text(x, y, label, ha='center', va='center', fontsize=7, fontweight='bold')
 
             elif name == 'bus_elec':
-                # Bus - special diamond shape
+                # Electricity Bus - special shape (golden)
                 rect = Rectangle((x-4, y-2), 8, 4, facecolor='#FFD700', edgecolor='black',
                                linewidth=3, alpha=0.8)
                 ax.add_patch(rect)
                 ax.text(x, y, 'Electricity\nBus', ha='center', va='center', fontsize=8, fontweight='bold')
+
+            elif name == 'bus_biogas':
+                # Biogas Bus - special shape (green)
+                rect = Rectangle((x-4, y-2), 8, 4, facecolor='#95B46A', edgecolor='black',
+                               linewidth=3, alpha=0.8)
+                ax.add_patch(rect)
+                ax.text(x, y, 'Biogas\nBus', ha='center', va='center', fontsize=8, fontweight='bold')
 
             else:
                 # Other components - rounded rectangles
@@ -267,7 +277,7 @@ class PublicationVisualizer:
             # Turbines to electricity bus (NOT to battery!)
             ('hawt', 'bus_elec'), ('bladeless', 'bus_elec'),
 
-            # Gas to multiple destinations (CHP, Boiler, AND Power Network!)
+            # Natural Gas to multiple destinations (CHP, Boiler, AND Power Network!)
             ('gas', 'chp'), ('gas', 'boiler'), ('gas', 'power_network'),
 
             # Power Network to electricity bus
@@ -277,8 +287,10 @@ class PublicationVisualizer:
             ('bus_elec', 'battery'), ('bus_elec', 'elec_demand'),
             ('battery', 'bus_elec'),  # Bidirectional
 
-            # CHP and Boiler
+            # CHP outputs (electricity + heat)
             ('chp', 'bus_elec'), ('chp', 'heat_demand'),
+
+            # Boiler output (heat only)
             ('boiler', 'heat_demand'),
 
             # CORRECTED Water flow: Groundwater → Pump → Primary GW → (Agr | Secondary GW → Urban)
@@ -301,17 +313,22 @@ class PublicationVisualizer:
             # Sludge from wastewater treatment
             ('primary_ww', 'sludge_storage'), ('secondary_ww', 'sludge_storage'),
 
-            # Sludge management
+            # Sludge management and biogas production
             ('sludge_storage', 'composting'), ('sludge_storage', 'digester'),
             ('biomass', 'digester'),
 
-            # Digester outputs
-            ('digester', 'chp'),  # Biogas to CHP
-            ('digester', 'market_biogas'),
+            # BIOGAS BUS: Digester → Biogas Bus → CHP/Boiler/Market
+            # This shows that both CHP and Boiler can use biogas OR natural gas
+            ('digester', 'bus_biogas'),  # Digester produces biogas to bus
+            ('bus_biogas', 'chp'),  # Biogas can fuel CHP (dual-fuel capability)
+            ('bus_biogas', 'boiler'),  # Biogas can fuel Boiler (dual-fuel capability)
+            ('bus_biogas', 'market_biogas'),  # Or sell excess biogas
 
-            # Markets
-            ('composting', 'market_compost'),
+            # Carbon emissions to market
             ('chp', 'market_co2'), ('boiler', 'market_co2'),
+
+            # Compost to market
+            ('composting', 'market_compost'),
         ]
 
         for start, end in connections:
@@ -330,10 +347,12 @@ class PublicationVisualizer:
             mpatches.Patch(facecolor=self.colors['wind'], label='Energy Resources'),
             mpatches.Patch(facecolor=self.colors['water'], label='Water Resources'),
             mpatches.Patch(facecolor=self.colors['neutral'], label='Storage'),
+            mpatches.Patch(facecolor='#FFD700', label='Electricity Bus'),
+            mpatches.Patch(facecolor='#95B46A', label='Biogas Bus'),
             mpatches.Patch(facecolor=self.colors['positive'], label='Markets'),
             mpatches.Patch(facecolor='#DDDDDD', label='Processes'),
         ]
-        ax.legend(handles=legend_elements, loc='lower left', fontsize=9, frameon=True)
+        ax.legend(handles=legend_elements, loc='lower left', fontsize=8, frameon=True, ncol=2)
 
         plt.savefig(f'{self.output_dir}/Fig1_System_Topology.png', dpi=300, bbox_inches='tight')
         plt.close()
