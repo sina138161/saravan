@@ -126,6 +126,36 @@ class SaravanDataGenerator:
                     'wastewater_primary_kwh_per_m3': 0.25,  # Wastewater primary treatment
                     'wastewater_secondary_kwh_per_m3': 0.60,  # Wastewater secondary treatment
                 }
+            },
+
+            'heat_demand': {
+                'urban': {
+                    'annual_total_kwh_thermal': 300000,  # Annual urban heat demand (heating + hot water)
+                    'seasonal_factor': {
+                        'spring': 0.6,
+                        'summer': 0.3,  # Minimal heating, only hot water
+                        'fall': 0.8,
+                        'winter': 1.8   # Peak heating season
+                    },
+                    'daily_pattern': 'morning_evening',  # Peak demand at morning and evening
+                }
+            },
+
+            'biomass': {
+                'local_availability': {
+                    'agricultural_residue': 50000,  # kg/year (crop residues, orchard pruning)
+                    'animal_waste': 30000,  # kg/year (livestock manure)
+                    'urban_organic_waste': 20000,  # kg/year (municipal organic waste)
+                },
+                'energy_content_kwh_per_kg': 4.2,  # Lower heating value (dry basis)
+                'seasonal_pattern': {
+                    'spring': 0.8,
+                    'summer': 1.2,  # Peak after harvest
+                    'fall': 1.3,    # Peak after harvest
+                    'winter': 0.7
+                },
+                'moisture_content': 0.15,  # 15% moisture (dry basis assumed)
+                'collection_cost_per_kg': 0.05  # $/kg
             }
         }
 
@@ -445,6 +475,107 @@ class SaravanDataGenerator:
 
         return df
 
+    def generate_heat_demand(self, hours: int = 8760,
+                            start_date: str = "2025-01-01") -> pd.DataFrame:
+        """
+        Generate hourly heat demand (space heating + hot water)
+
+        Args:
+            hours: Number of hours
+            start_date: Start date
+
+        Returns:
+            DataFrame with timestamps and heat demands by sector
+        """
+
+        timestamps = pd.date_range(start=start_date, periods=hours, freq='H')
+
+        # Urban heat demand
+        urban_params = self.saravan_params['heat_demand']['urban']
+        annual_total = urban_params['annual_total_kwh_thermal']
+        avg_hourly = annual_total / 8760
+
+        seasonal_factor = np.array([
+            self._get_seasonal_factor(ts, 'urban', resource='heat')
+            for ts in timestamps
+        ])
+
+        # Daily pattern: morning and evening peaks (heating and hot water)
+        daily_factor = np.array([
+            1.8 if ts.hour in [6, 7, 20, 21] else  # Morning and evening peaks
+            1.2 if 5 <= ts.hour <= 9 or 18 <= ts.hour <= 23 else
+            0.5
+            for ts in timestamps
+        ])
+
+        urban_heat_demand = avg_hourly * seasonal_factor * daily_factor
+        period_total = annual_total * (hours / 8760)
+        urban_heat_demand = urban_heat_demand * (period_total / urban_heat_demand.sum())
+        noise = np.random.lognormal(0, 0.1, hours)
+        urban_heat_demand = urban_heat_demand * noise
+
+        df = pd.DataFrame({
+            'timestamp': timestamps,
+            'urban_kwh_thermal': urban_heat_demand,
+            'total_kwh_thermal': urban_heat_demand  # Only urban for now
+        })
+
+        return df
+
+    def generate_biomass_availability(self, hours: int = 8760,
+                                     start_date: str = "2025-01-01") -> pd.DataFrame:
+        """
+        Generate hourly biomass availability (kg/h)
+
+        Args:
+            hours: Number of hours
+            start_date: Start date
+
+        Returns:
+            DataFrame with timestamps and biomass availability
+        """
+
+        timestamps = pd.date_range(start=start_date, periods=hours, freq='H')
+
+        biomass_params = self.saravan_params['biomass']
+
+        # Total annual biomass available
+        total_agricultural = biomass_params['local_availability']['agricultural_residue']
+        total_animal = biomass_params['local_availability']['animal_waste']
+        total_urban = biomass_params['local_availability']['urban_organic_waste']
+        total_annual = total_agricultural + total_animal + total_urban
+
+        # Hourly average
+        avg_hourly = total_annual / 8760
+
+        # Seasonal variation (higher after harvest)
+        seasonal_factor = np.array([
+            self._get_seasonal_factor(ts, 'biomass', resource='biomass')
+            for ts in timestamps
+        ])
+
+        biomass_availability = avg_hourly * seasonal_factor
+
+        # Scale to maintain annual total
+        period_total = total_annual * (hours / 8760)
+        biomass_availability = biomass_availability * (period_total / biomass_availability.sum())
+
+        # Add noise
+        noise = np.random.lognormal(0, 0.15, hours)
+        biomass_availability = biomass_availability * noise
+
+        # Energy content
+        energy_content = biomass_params['energy_content_kwh_per_kg']
+        energy_availability = biomass_availability * energy_content
+
+        df = pd.DataFrame({
+            'timestamp': timestamps,
+            'biomass_available_kg_h': biomass_availability,
+            'biomass_energy_kwh_h': energy_availability
+        })
+
+        return df
+
     def generate_complete_dataset(self, hours: int = 8760,
                                  start_date: str = "2025-01-01") -> Dict[str, pd.DataFrame]:
         """
@@ -500,12 +631,26 @@ class SaravanDataGenerator:
         print(f"   Annual treatment: {elec_df['treatment_kwh'].sum():,.0f} kWh")
         print(f"   TOTAL annual: {elec_df['total_kwh'].sum():,.0f} kWh (no industrial)")
 
+        # Generate heat demand
+        print("\n🔥 Generating heat demand...")
+        heat_df = self.generate_heat_demand(hours, start_date)
+        print(f"   Annual urban heat: {heat_df['urban_kwh_thermal'].sum():,.0f} kWh-thermal")
+        print(f"   TOTAL annual heat: {heat_df['total_kwh_thermal'].sum():,.0f} kWh-thermal")
+
+        # Generate biomass availability
+        print("\n🌾 Generating biomass availability...")
+        biomass_df = self.generate_biomass_availability(hours, start_date)
+        print(f"   Annual biomass: {biomass_df['biomass_available_kg_h'].sum():,.0f} kg")
+        print(f"   Annual biomass energy: {biomass_df['biomass_energy_kwh_h'].sum():,.0f} kWh-thermal")
+
         dataset = {
             'wind': wind_df,
             'dust': dust_df,
             'temperature': temp_df,
             'water_demand': water_df,
-            'electricity_demand': elec_df
+            'electricity_demand': elec_df,
+            'heat_demand': heat_df,
+            'biomass': biomass_df
         }
 
         print(f"\n✅ Data generation complete!")
@@ -536,6 +681,12 @@ class SaravanDataGenerator:
         elif resource == 'electricity':
             # Electricity demand has sector-specific seasonality
             return self.saravan_params['electricity_demand'][variable]['seasonal_factor'][season]
+        elif resource == 'heat':
+            # Heat demand has sector-specific seasonality
+            return self.saravan_params['heat_demand'][variable]['seasonal_factor'][season]
+        elif resource == 'biomass':
+            # Biomass availability seasonality
+            return self.saravan_params['biomass']['seasonal_pattern'][season]
         else:
             # Wind and dust
             return self.saravan_params[variable]['seasonal_variation'][season]
