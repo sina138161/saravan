@@ -10,6 +10,7 @@ from typing import Dict, Optional
 from wind_turbine_models import WindTurbineModels
 from water_system_model import WaterSystemModel
 from carbon_market_model import CarbonMarketModel
+from thermal_carbon_systems import CHPModel, GasBoilerModel, SludgeManagementSystem, CCUSystem, MarketModel
 
 
 class WindWaterNetworkBuilder:
@@ -28,12 +29,17 @@ class WindWaterNetworkBuilder:
         Initialize network builder
 
         Args:
-            time_series_data: Dictionary with wind, dust, temperature, water_demand
+            time_series_data: Dictionary with wind, dust, temperature, water_demand, heat_demand, biomass
         """
         self.data = time_series_data
         self.turbines = WindTurbineModels()
         self.water = WaterSystemModel()
         self.carbon = CarbonMarketModel()
+        self.chp = CHPModel()
+        self.boiler = GasBoilerModel()
+        self.sludge_system = SludgeManagementSystem()
+        self.ccu = CCUSystem()
+        self.market = MarketModel()
 
         # Network will be created later
         self.network = None
@@ -96,6 +102,9 @@ class WindWaterNetworkBuilder:
         # Add loads (electricity and water demand)
         self._add_loads()
 
+        # Add thermal and carbon systems (CHP, boiler, sludge, CCU, market)
+        self._add_thermal_carbon_systems()
+
         print(f"\n✅ Network built successfully!")
         print(f"   Buses: {len(self.network.buses)}")
         print(f"   Generators: {len(self.network.generators)}")
@@ -112,6 +121,14 @@ class WindWaterNetworkBuilder:
             ('wind', 'Wind energy'),
             ('natural_gas', 'Natural gas'),
             ('water', 'Water'),
+            ('heat', 'Heat (thermal energy)'),
+            ('biogas', 'Biogas (from digester)'),
+            ('biomass', 'Biomass (organic matter)'),
+            ('sludge', 'Sludge (from wastewater)'),
+            ('compost', 'Compost (fertilizer)'),
+            ('digestate', 'Digestate (fertilizer)'),
+            ('co2', 'Carbon dioxide'),
+            ('captured_co2', 'Captured CO2 (pure)'),
         ]
 
         for carrier_name, nice_name in carriers:
@@ -122,18 +139,43 @@ class WindWaterNetworkBuilder:
     def _add_buses(self):
         """Add buses to network"""
         buses = [
+            # Energy buses
             'electricity',
+            'natural_gas',
+            'heat',
+            'biogas',
+
+            # Water buses
             'water_raw',  # Raw groundwater
             'water_agricultural',  # Primary treated water
             'water_potable',  # Secondary treated water (potable)
             'wastewater_municipal',  # Urban wastewater
             'wastewater_discharge',  # Discharge sink for excess wastewater
+
+            # Organic matter buses
+            'biomass',
+            'sludge',
+
+            # Products buses
+            'compost',
+            'digestate',
+
+            # Carbon buses
+            'co2_emissions',  # CO2 from combustion
+            'co2_captured',  # Captured and purified CO2
+
+            # Market buses
+            'market_compost',
+            'market_digestate',
+            'market_co2',
+            'market_electricity',
+            'market_heat',
         ]
 
         for bus in buses:
             self.network.add("Bus", bus)
 
-        print(f"\n📍 Added {len(buses)} buses: {buses}")
+        print(f"\n📍 Added {len(buses)} buses")
 
     def _add_wind_turbines(self, turbine_mix: Dict):
         """Add wind turbines with dust impact"""
@@ -299,10 +341,13 @@ class WindWaterNetworkBuilder:
             capital_cost=0  # No cost for generation
         )
 
-        # 5. Wastewater Primary Treatment (wastewater → agricultural reuse)
+        # 5. Wastewater Primary Treatment (wastewater → agricultural reuse + sludge)
         # Same fix: wastewater as reference
         ww_primary_energy = self.water.quality_system['wastewater_primary_treatment']['energy_kwh_per_m3']
         ww_primary_recovery = self.water.quality_system['wastewater_primary_treatment']['recovery_rate']
+
+        # Sludge production: ~75 g/m³ of wastewater treated
+        sludge_production_kg_per_m3 = 0.075
 
         self.network.add(
             "Link",
@@ -310,14 +355,16 @@ class WindWaterNetworkBuilder:
             bus0="wastewater_municipal",  # Input wastewater (reference)
             bus1="electricity",  # Electricity consumed
             bus2="water_agricultural",  # Output water
+            bus3="sludge",  # Output sludge
             p_nom=max_urban * wastewater_factor * water_energy_equiv,  # Max flow kW-equiv
             efficiency=ww_primary_energy / water_energy_equiv,  # 0.25/1.0 = 0.25
             efficiency2=ww_primary_recovery,  # 0.85 output per input
+            efficiency3=sludge_production_kg_per_m3,  # Sludge production
             marginal_cost=0,
             capital_cost=100000
         )
 
-        # 6. Wastewater Secondary Treatment (wastewater → potable reuse)
+        # 6. Wastewater Secondary Treatment (wastewater → potable reuse + sludge)
         # Same fix: wastewater as reference
         ww_secondary_energy = self.water.quality_system['wastewater_secondary_treatment']['energy_kwh_per_m3']
         ww_secondary_recovery = self.water.quality_system['wastewater_secondary_treatment']['recovery_rate']
@@ -328,9 +375,11 @@ class WindWaterNetworkBuilder:
             bus0="wastewater_municipal",  # Input wastewater (reference)
             bus1="electricity",  # Electricity consumed
             bus2="water_potable",  # Output water
+            bus3="sludge",  # Output sludge
             p_nom=max_urban * wastewater_factor * water_energy_equiv,  # Max flow kW-equiv
             efficiency=ww_secondary_energy / water_energy_equiv,  # 0.60/1.0 = 0.60
             efficiency2=ww_secondary_recovery,  # 0.75 output per input
+            efficiency3=sludge_production_kg_per_m3 * 1.2,  # More sludge from secondary (20% more)
             marginal_cost=0,
             capital_cost=200000
         )
@@ -481,6 +530,334 @@ class WindWaterNetworkBuilder:
         print(f"\n   Grid connection:")
         print(f"      Gas-fired power: 5 MW capacity, $0.12/kWh, 45% efficiency")
         print(f"      Emergency backup: 2 MW capacity, $2/kWh")
+
+    def _add_thermal_carbon_systems(self):
+        """Add all thermal and carbon systems: biomass, CHP, boiler, sludge, CCU, market"""
+
+        print(f"\n🔥 Adding thermal and carbon systems...")
+
+        # ====================================================================================
+        # 1. BIOMASS SOURCE
+        # ====================================================================================
+        print(f"\n   1. Biomass source...")
+
+        if 'biomass' in self.data:
+            biomass_df = self.data['biomass']
+            biomass_available = biomass_df['biomass_available_kg_h'].values[:len(self.network.snapshots)]
+
+            # Biomass is available as a generator (source)
+            # Convert kg/h to kW-equivalent for PyPSA (using energy content)
+            energy_per_kg = 4.2  # kWh/kg
+            biomass_power = biomass_available * energy_per_kg  # kW-equivalent
+
+            # Add biomass as a limited generator
+            self.network.add(
+                "Generator",
+                "Biomass_Source",
+                bus="biomass",
+                p_nom=biomass_power.max(),  # Peak availability
+                p_max_pu=biomass_power / biomass_power.max() if biomass_power.max() > 0 else np.zeros_like(biomass_power),
+                marginal_cost=5,  # Collection cost ($/MWh equivalent)
+                capital_cost=0,
+                carrier='biomass'
+            )
+
+            print(f"      Biomass availability: {biomass_available.sum():,.0f} kg (total)")
+            print(f"      Energy content: {biomass_power.sum():,.0f} kWh-thermal (total)")
+        else:
+            print(f"      WARNING: No biomass data available!")
+
+        # ====================================================================================
+        # 2. NATURAL GAS SOURCE
+        # ====================================================================================
+        print(f"\n   2. Natural gas source...")
+
+        # Natural gas is unlimited but expensive
+        self.network.add(
+            "Generator",
+            "Natural_Gas_Source",
+            bus="natural_gas",
+            p_nom=10000,  # 10 MW thermal equivalent
+            marginal_cost=40,  # $/MWh-thermal (gas price)
+            capital_cost=0,
+            carrier='natural_gas'
+        )
+
+        print(f"      Natural gas: Unlimited, $0.04/kWh-thermal")
+
+        # ====================================================================================
+        # 3. HEAT DEMAND
+        # ====================================================================================
+        print(f"\n   3. Heat demand...")
+
+        if 'heat_demand' in self.data:
+            heat_df = self.data['heat_demand']
+            heat_demand_kwh = heat_df['urban_kwh_thermal'].values[:len(self.network.snapshots)]
+
+            self.network.add(
+                "Load",
+                "Urban_Heat",
+                bus="heat",
+                p_set=heat_demand_kwh
+            )
+
+            print(f"      Urban heat demand: {heat_demand_kwh.mean():.1f} kWh/h (avg), {heat_demand_kwh.sum():,.0f} kWh (total)")
+        else:
+            print(f"      WARNING: No heat demand data available!")
+
+        # ====================================================================================
+        # 4. CHP (Combined Heat & Power)
+        # ====================================================================================
+        print(f"\n   4. CHP (Combined Heat & Power)...")
+
+        chp_specs = self.chp.get_specs()
+
+        # CHP from natural gas
+        self.network.add(
+            "Link",
+            "CHP_NaturalGas",
+            bus0="natural_gas",  # Input: natural gas
+            bus1="electricity",  # Output 1: electricity
+            bus2="heat",  # Output 2: heat
+            bus3="co2_emissions",  # Output 3: CO2
+            p_nom=1000,  # 1 MW thermal input capacity
+            efficiency=chp_specs['electrical_efficiency'],  # 35% electrical
+            efficiency2=chp_specs['thermal_efficiency'],  # 45% thermal
+            efficiency3=chp_specs['emissions_natural_gas'],  # CO2 emissions
+            marginal_cost=20,  # O&M cost
+            capital_cost=chp_specs['capex'] * chp_specs['electrical_efficiency'] * 1000  # Based on electrical output
+        )
+
+        # CHP from biogas
+        self.network.add(
+            "Link",
+            "CHP_Biogas",
+            bus0="biogas",  # Input: biogas
+            bus1="electricity",  # Output 1: electricity
+            bus2="heat",  # Output 2: heat
+            p_nom=500,  # 500 kW thermal input capacity
+            efficiency=chp_specs['electrical_efficiency'],  # 35% electrical
+            efficiency2=chp_specs['thermal_efficiency'],  # 45% thermal
+            marginal_cost=10,  # Lower O&M for biogas
+            capital_cost=chp_specs['capex'] * chp_specs['electrical_efficiency'] * 500
+        )
+
+        print(f"      CHP (natural gas): 1 MW thermal input, {chp_specs['electrical_efficiency']*100}% elec, {chp_specs['thermal_efficiency']*100}% heat")
+        print(f"      CHP (biogas): 500 kW thermal input, {chp_specs['electrical_efficiency']*100}% elec, {chp_specs['thermal_efficiency']*100}% heat")
+
+        # ====================================================================================
+        # 5. GAS BOILER
+        # ====================================================================================
+        print(f"\n   5. Gas boiler...")
+
+        boiler_specs = self.boiler.get_specs()
+
+        # Boiler from natural gas
+        self.network.add(
+            "Link",
+            "Boiler_NaturalGas",
+            bus0="natural_gas",  # Input: natural gas
+            bus1="heat",  # Output 1: heat
+            bus2="co2_emissions",  # Output 2: CO2
+            p_nom=2000,  # 2 MW thermal input capacity
+            efficiency=boiler_specs['thermal_efficiency'],  # 85% thermal
+            efficiency2=boiler_specs['emissions_natural_gas'],  # CO2 emissions
+            marginal_cost=5,  # O&M cost
+            capital_cost=boiler_specs['capex'] * boiler_specs['thermal_efficiency'] * 2000
+        )
+
+        # Boiler from biogas
+        self.network.add(
+            "Link",
+            "Boiler_Biogas",
+            bus0="biogas",  # Input: biogas
+            bus1="heat",  # Output: heat
+            p_nom=1000,  # 1 MW thermal input capacity
+            efficiency=boiler_specs['thermal_efficiency'],  # 85% thermal
+            marginal_cost=3,  # Lower O&M for biogas
+            capital_cost=boiler_specs['capex'] * boiler_specs['thermal_efficiency'] * 1000
+        )
+
+        print(f"      Boiler (natural gas): 2 MW thermal input, {boiler_specs['thermal_efficiency']*100}% efficiency")
+        print(f"      Boiler (biogas): 1 MW thermal input, {boiler_specs['thermal_efficiency']*100}% efficiency")
+
+        # ====================================================================================
+        # 6. SLUDGE MANAGEMENT SYSTEM
+        # ====================================================================================
+        print(f"\n   6. Sludge management system...")
+
+        # 6a. Sludge production from wastewater treatment
+        # Assume sludge is produced from wastewater (1 kg sludge per 13 m³ wastewater, roughly)
+        # We'll model this as a byproduct of wastewater treatment
+
+        # Add sludge accumulation store
+        self.network.add(
+            "Store",
+            "Sludge_Accumulation",
+            bus="sludge",
+            e_nom=10000,  # Large capacity (kg)
+            e_cyclic=False,
+            e_initial=0
+        )
+
+        # 6b. Composting: sludge + biomass → compost
+        compost_specs = self.sludge_system.get_composting_specs()
+
+        self.network.add(
+            "Link",
+            "Composting",
+            bus0="sludge",  # Input 1: sludge (70%)
+            bus1="biomass",  # Input 2: biomass (30%)
+            bus2="compost",  # Output: compost
+            p_nom=100,  # 100 kg/h processing capacity
+            efficiency=compost_specs['sludge_input_ratio'] / compost_specs['compost_output_ratio'],  # Sludge to compost
+            efficiency2=compost_specs['biomass_input_ratio'] / compost_specs['compost_output_ratio'],  # Biomass to compost
+            marginal_cost=10,  # Processing cost
+            capital_cost=compost_specs['capex']
+        )
+
+        # 6c. Anaerobic digester: sludge + biomass + heat + electricity → biogas + digestate
+        digester_specs = self.sludge_system.get_digester_specs()
+
+        self.network.add(
+            "Link",
+            "Anaerobic_Digester",
+            bus0="sludge",  # Input 1: sludge
+            bus1="biomass",  # Input 2: biomass
+            bus2="electricity",  # Input 3: electricity (for mixing)
+            bus3="heat",  # Input 4: heat (for temperature)
+            bus4="biogas",  # Output 1: biogas
+            bus5="digestate",  # Output 2: digestate
+            p_nom=200,  # 200 kg/h organic matter input capacity
+            efficiency=digester_specs['sludge_input_ratio'] * digester_specs['biogas_yield_m3_per_kg'] * digester_specs['biogas_lhv'],  # Sludge to biogas energy
+            efficiency2=digester_specs['biomass_input_ratio'] * digester_specs['biogas_yield_m3_per_kg'] * digester_specs['biogas_lhv'],  # Biomass to biogas energy
+            efficiency3=digester_specs['electricity_consumption_kwh_per_m3'] / digester_specs['biogas_lhv'],  # Electricity consumption ratio
+            efficiency4=digester_specs['heat_consumption_kwh_per_m3'] / digester_specs['biogas_lhv'],  # Heat consumption ratio
+            efficiency5=digester_specs['digestate_output_ratio'],  # Digestate output
+            marginal_cost=15,  # Processing cost
+            capital_cost=digester_specs['capex']
+        )
+
+        print(f"      Composting: {compost_specs['compost_output_ratio']*100}% mass recovery")
+        print(f"      Anaerobic digester: {digester_specs['biogas_yield_m3_per_kg']} m³ biogas/kg organic matter")
+
+        # ====================================================================================
+        # 7. CCU SYSTEM (Carbon Capture & Utilization)
+        # ====================================================================================
+        print(f"\n   7. CCU (Carbon Capture & Utilization)...")
+
+        ccu_specs = self.ccu.get_specs()
+
+        # CCU captures CO2 from emissions bus
+        self.network.add(
+            "Link",
+            "CCU_Capture",
+            bus0="co2_emissions",  # Input 1: CO2 from combustion
+            bus1="electricity",  # Input 2: electricity for capture
+            bus2="co2_captured",  # Output: captured CO2
+            p_nom=100,  # 100 kg CO2/h capacity
+            efficiency=ccu_specs['capture_efficiency'],  # 90% capture
+            efficiency2=ccu_specs['electricity_kwh_per_kg_co2'],  # Electricity consumption
+            marginal_cost=50,  # Processing cost ($/ton CO2 = $0.05/kg)
+            capital_cost=ccu_specs['capex_per_ton_day'] * 100 / 1000 * 24  # Convert to hourly capacity
+        )
+
+        print(f"      CCU: {ccu_specs['capture_efficiency']*100}% capture efficiency")
+        print(f"      Energy: {ccu_specs['electricity_kwh_per_kg_co2']} kWh/kg CO2")
+
+        # ====================================================================================
+        # 8. MARKET (Sales of Products)
+        # ====================================================================================
+        print(f"\n   8. Market (product sales)...")
+
+        market_prices = self.market.get_prices()
+        market_limits = self.market.get_limits()
+
+        # Market for compost (negative cost = revenue)
+        self.network.add(
+            "Link",
+            "Market_Compost",
+            bus0="compost",
+            bus1="market_compost",
+            p_nom=market_limits['compost_tons_year'] / 8760,  # Convert annual to hourly
+            efficiency=1.0,
+            marginal_cost=-market_prices['compost_per_ton']  # Negative = revenue
+        )
+
+        # Market for digestate
+        self.network.add(
+            "Link",
+            "Market_Digestate",
+            bus0="digestate",
+            bus1="market_digestate",
+            p_nom=market_limits['digestate_tons_year'] / 8760,
+            efficiency=1.0,
+            marginal_cost=-market_prices['digestate_per_ton']  # Negative = revenue
+        )
+
+        # Market for CO2
+        self.network.add(
+            "Link",
+            "Market_CO2",
+            bus0="co2_captured",
+            bus1="market_co2",
+            p_nom=market_limits['co2_kg_year'] / 8760,  # kg/h
+            efficiency=1.0,
+            marginal_cost=-market_prices['co2_per_kg'] * 1000  # Negative = revenue ($/ton = $/1000 kg)
+        )
+
+        # Market for excess electricity (feed-in to grid)
+        self.network.add(
+            "Link",
+            "Market_Electricity",
+            bus0="electricity",
+            bus1="market_electricity",
+            p_nom=market_limits['electricity_kwh_year'] / 8760,  # kW
+            efficiency=1.0,
+            marginal_cost=-market_prices['electricity_per_kwh']  # Negative = revenue
+        )
+
+        # Market for excess heat (to industrial customers)
+        self.network.add(
+            "Link",
+            "Market_Heat",
+            bus0="heat",
+            bus1="market_heat",
+            p_nom=market_limits['heat_kwh_year'] / 8760,  # kW
+            efficiency=1.0,
+            marginal_cost=-market_prices['heat_per_kwh_thermal']  # Negative = revenue
+        )
+
+        # Add market sinks (unlimited absorption)
+        for market_bus in ['market_compost', 'market_digestate', 'market_co2', 'market_electricity', 'market_heat']:
+            self.network.add(
+                "Store",
+                f"{market_bus}_sink",
+                bus=market_bus,
+                e_nom=1e9,  # Unlimited
+                e_cyclic=False,
+                e_initial=0
+            )
+
+        # CO2 emissions sink (atmosphere)
+        self.network.add(
+            "Store",
+            "CO2_Atmosphere",
+            bus="co2_emissions",
+            e_nom=1e9,  # Unlimited
+            e_cyclic=False,
+            e_initial=0,
+            standing_losses=0  # CO2 stays in atmosphere
+        )
+
+        print(f"      Market prices:")
+        print(f"         Compost: ${market_prices['compost_per_ton']}/ton")
+        print(f"         Digestate: ${market_prices['digestate_per_ton']}/ton")
+        print(f"         CO2: ${market_prices['co2_per_kg']}/kg")
+        print(f"         Electricity: ${market_prices['electricity_per_kwh']}/kWh")
+        print(f"         Heat: ${market_prices['heat_per_kwh_thermal']}/kWh-thermal")
+
+        print(f"\n✅ Thermal and carbon systems added successfully!")
 
     def optimize(self, solver: str = 'highs') -> Dict:
         """

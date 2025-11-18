@@ -13,6 +13,7 @@ from carbon_market_model import CarbonMarketModel
 from wind_turbine_models import WindTurbineModels
 from visualization_nexus import NexusVisualizer
 from carbon_emissions_visualizer import CarbonEmissionsVisualizer
+from publication_visualizations import PublicationVisualizer
 
 
 class SaravanWindWaterOptimizer:
@@ -261,9 +262,9 @@ class SaravanWindWaterOptimizer:
     def _export_results(self):
         """Export results to files"""
 
-        # Create output directory on Desktop
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        output_dir = os.path.join(desktop, 'saravan_wind_water_results')
+        # Create output directory in project folder
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        output_dir = os.path.join(project_dir, 'results')
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"\n{'='*80}")
@@ -327,6 +328,19 @@ class SaravanWindWaterOptimizer:
             self.network_builder.network,
             self.results['carbon']['co2_avoided_tons']
         )
+
+        # Create publication-ready visualizations
+        print(f"\n{'='*80}")
+        print("CREATING PUBLICATION-READY FIGURES")
+        print(f"{'='*80}")
+
+        publication_visualizer = PublicationVisualizer(
+            network=self.network_builder.network,
+            results=self.results,
+            dataset=self.dataset,
+            output_dir=f"{output_dir}/publication_figures"
+        )
+        publication_visualizer.create_all_publication_figures()
 
         print(f"\n✅ All results exported to: {output_dir}")
 
@@ -408,4 +422,4 @@ if __name__ == "__main__":
     print(f"\n{'='*80}")
     print("✅ SARAVAN WIND-WATER NEXUS OPTIMIZATION COMPLETE!")
     print(f"{'='*80}")
-    print(f"\nResults saved to Desktop/saravan_wind_water_results/")
+    print(f"\nResults saved to ./saravan_wind_water_nexus/results/")
