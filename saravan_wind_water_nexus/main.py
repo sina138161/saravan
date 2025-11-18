@@ -13,6 +13,7 @@ from carbon_market_model import CarbonMarketModel
 from wind_turbine_models import WindTurbineModels
 from visualization_nexus import NexusVisualizer
 from carbon_emissions_visualizer import CarbonEmissionsVisualizer
+from publication_visualizations import PublicationVisualizer
 
 
 class SaravanWindWaterOptimizer:
@@ -327,6 +328,19 @@ class SaravanWindWaterOptimizer:
             self.network_builder.network,
             self.results['carbon']['co2_avoided_tons']
         )
+
+        # Create publication-ready visualizations
+        print(f"\n{'='*80}")
+        print("CREATING PUBLICATION-READY FIGURES")
+        print(f"{'='*80}")
+
+        publication_visualizer = PublicationVisualizer(
+            network=self.network_builder.network,
+            results=self.results,
+            dataset=self.dataset,
+            output_dir=f"{output_dir}/publication_figures"
+        )
+        publication_visualizer.create_all_publication_figures()
 
         print(f"\n✅ All results exported to: {output_dir}")
 
