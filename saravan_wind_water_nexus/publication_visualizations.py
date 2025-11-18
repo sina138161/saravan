@@ -133,8 +133,14 @@ class PublicationVisualizer:
     def fig1_system_topology(self):
         """
         Figure 1: Complete system topology showing all components and connections
+        Updated based on correct architecture:
+        - VAWT removed
+        - Gas connects to: CHP, Boiler, AND Power Network (PN)
+        - Correct water flow: GW→Pump→Primary GW→(Agr | Secondary GW→Urban)
+        - Wastewater: Urban→Primary WW→(Agr | Secondary WW→Urban)
+        - Turbines connect to electricity bus, not directly to battery
         """
-        fig = plt.figure(figsize=(16, 12))
+        fig = plt.figure(figsize=(18, 14))
         ax = plt.axes([0.05, 0.05, 0.9, 0.9])
         ax.set_xlim(0, 100)
         ax.set_ylim(0, 100)
@@ -144,28 +150,48 @@ class PublicationVisualizer:
         ax.text(50, 95, 'Wind-Water-Energy-Carbon Nexus System Topology',
                ha='center', fontsize=16, fontweight='bold')
 
-        # Define component positions
+        # Define component positions (updated layout)
         components = {
-            # Resources (left)
-            'wind': (10, 75), 'groundwater': (10, 60), 'gas': (10, 45), 'biomass': (10, 30),
+            # Resources (left column)
+            'wind': (8, 80),
+            'groundwater': (8, 62),
+            'gas': (8, 44),
+            'biomass': (8, 26),
 
-            # Generation (center-left)
-            'hawt': (30, 80), 'vawt': (30, 70), 'bladeless': (30, 60),
-            'chp': (30, 45), 'boiler': (30, 35),
+            # Energy Generation (center-left)
+            'hawt': (25, 85),
+            'bladeless': (25, 75),
+            'power_network': (25, 50),  # Gas-to-electricity (PN)
+            'bus_elec': (40, 80),  # Electricity bus
+            'chp': (25, 38),
+            'boiler': (25, 28),
 
             # Storage (center)
-            'battery': (50, 75), 'water_tank': (50, 55), 'sludge': (50, 35),
+            'battery': (55, 80),
+            'water_tank': (55, 55),
+            'sludge_storage': (55, 20),
 
-            # Treatment (center-right)
-            'primary_ww': (70, 60), 'secondary_ww': (70, 50),
-            'composting': (70, 40), 'digester': (70, 30),
+            # Water Treatment (center-right)
+            'pump': (28, 62),
+            'primary_gw': (40, 62),
+            'secondary_gw': (52, 68),
+            'primary_ww': (40, 48),
+            'secondary_ww': (52, 42),
 
-            # Demands (right)
-            'elec_demand': (90, 75), 'heat_demand': (90, 65),
-            'water_agr': (90, 55), 'water_urban': (90, 45),
+            # Sludge Management
+            'composting': (68, 24),
+            'digester': (68, 14),
+
+            # Demands (right column)
+            'elec_demand': (85, 80),
+            'heat_demand': (85, 68),
+            'water_agr': (85, 58),
+            'water_urban': (70, 48),
 
             # Markets (bottom-right)
-            'market_co2': (90, 25), 'market_compost': (90, 15), 'market_biogas': (90, 5)
+            'market_co2': (85, 32),
+            'market_compost': (85, 20),
+            'market_biogas': (85, 10)
         }
 
         # Draw components
@@ -173,55 +199,118 @@ class PublicationVisualizer:
             # Different shapes for different component types
             if name in ['wind', 'groundwater', 'gas', 'biomass']:
                 # Resources - circles
-                color = self.colors.get(name, '#CCCCCC')
-                circle = Circle((x, y), 3, facecolor=color, edgecolor='black', linewidth=2, alpha=0.7)
+                color = self.colors.get(name, '#0077BB')
+                circle = Circle((x, y), 2.5, facecolor=color, edgecolor='black', linewidth=2, alpha=0.7)
                 ax.add_patch(circle)
                 label = name.replace('_', ' ').title()
-                ax.text(x, y-5, label, ha='center', fontsize=8, fontweight='bold')
+                ax.text(x, y-4.5, label, ha='center', fontsize=7, fontweight='bold')
 
             elif 'market' in name:
-                # Markets - hexagons (approximated with fancy boxes)
-                color = self.colors.get('positive', '#CCCCCC')
-                box = FancyBboxPatch((x-3, y-2), 6, 4, boxstyle="round,pad=0.1",
+                # Markets - hexagons
+                color = self.colors.get('positive', '#00AA00')
+                box = FancyBboxPatch((x-3, y-1.8), 6, 3.6, boxstyle="round,pad=0.1",
                                     facecolor=color, edgecolor='black', linewidth=2, alpha=0.6)
                 ax.add_patch(box)
                 label = name.replace('market_', '').replace('_', ' ').title()
-                ax.text(x, y, label, ha='center', va='center', fontsize=7, fontweight='bold')
+                ax.text(x, y, label, ha='center', va='center', fontsize=6, fontweight='bold')
 
-            elif name in ['battery', 'water_tank', 'sludge']:
+            elif name in ['battery', 'water_tank', 'sludge_storage']:
                 # Storage - rectangles
-                color = self.colors.get('neutral', '#CCCCCC')
-                rect = Rectangle((x-3.5, y-2), 7, 4, facecolor=color, edgecolor='black',
+                color = self.colors.get('neutral', '#AAAAAA')
+                rect = Rectangle((x-3, y-2), 6, 4, facecolor=color, edgecolor='black',
                                linewidth=2, alpha=0.7)
                 ax.add_patch(rect)
-                label = name.replace('_', ' ').title()
-                ax.text(x, y, label, ha='center', va='center', fontsize=8, fontweight='bold')
+                label = name.replace('_', '\n').title()
+                ax.text(x, y, label, ha='center', va='center', fontsize=7, fontweight='bold')
+
+            elif name == 'bus_elec':
+                # Bus - special diamond shape
+                rect = Rectangle((x-4, y-2), 8, 4, facecolor='#FFD700', edgecolor='black',
+                               linewidth=3, alpha=0.8)
+                ax.add_patch(rect)
+                ax.text(x, y, 'Electricity\nBus', ha='center', va='center', fontsize=8, fontweight='bold')
 
             else:
                 # Other components - rounded rectangles
-                color = self.colors.get(name.split('_')[0], '#DDDDDD')
-                box = FancyBboxPatch((x-4, y-2), 8, 4, boxstyle="round,pad=0.3",
+                if 'power_network' in name:
+                    color = '#FF6B6B'  # Special color for PN
+                    label_text = 'Power\nNetwork\n(PN)'
+                elif 'pump' in name:
+                    color = '#4ECDC4'
+                    label_text = 'Water\nPump'
+                elif 'primary_gw' in name:
+                    color = '#95E1D3'
+                    label_text = 'Primary\nGW Treat'
+                elif 'secondary_gw' in name:
+                    color = '#5DADE2'
+                    label_text = 'Secondary\nGW Treat'
+                elif 'primary_ww' in name:
+                    color = '#F8B739'
+                    label_text = 'Primary\nWW Treat'
+                elif 'secondary_ww' in name:
+                    color = '#E67E22'
+                    label_text = 'Secondary\nWW Treat'
+                else:
+                    color = '#DDDDDD'
+                    label_text = name.replace('_', '\n').title()
+
+                box = FancyBboxPatch((x-3.5, y-2), 7, 4, boxstyle="round,pad=0.2",
                                     facecolor=color, edgecolor='black', linewidth=1.5, alpha=0.7)
                 ax.add_patch(box)
-                label = name.replace('_', '\n').title()
-                ax.text(x, y, label, ha='center', va='center', fontsize=7)
+                ax.text(x, y, label_text, ha='center', va='center', fontsize=6)
 
-        # Draw connections (arrows)
+        # Draw connections (arrows) - CORRECTED ARCHITECTURE
         connections = [
-            ('wind', 'hawt'), ('wind', 'vawt'), ('wind', 'bladeless'),
-            ('hawt', 'battery'), ('vawt', 'battery'), ('bladeless', 'battery'),
-            ('battery', 'elec_demand'),
-            ('gas', 'chp'), ('gas', 'boiler'),
-            ('biomass', 'digester'),
-            ('chp', 'elec_demand'), ('chp', 'heat_demand'),
+            # Wind to turbines
+            ('wind', 'hawt'), ('wind', 'bladeless'),
+
+            # Turbines to electricity bus (NOT to battery!)
+            ('hawt', 'bus_elec'), ('bladeless', 'bus_elec'),
+
+            # Gas to multiple destinations (CHP, Boiler, AND Power Network!)
+            ('gas', 'chp'), ('gas', 'boiler'), ('gas', 'power_network'),
+
+            # Power Network to electricity bus
+            ('power_network', 'bus_elec'),
+
+            # Electricity bus to battery and demand
+            ('bus_elec', 'battery'), ('bus_elec', 'elec_demand'),
+            ('battery', 'bus_elec'),  # Bidirectional
+
+            # CHP and Boiler
+            ('chp', 'bus_elec'), ('chp', 'heat_demand'),
             ('boiler', 'heat_demand'),
-            ('groundwater', 'water_tank'),
-            ('water_tank', 'water_agr'), ('water_tank', 'water_urban'),
-            ('water_urban', 'primary_ww'), ('primary_ww', 'secondary_ww'),
-            ('primary_ww', 'sludge'), ('secondary_ww', 'sludge'),
-            ('sludge', 'composting'), ('sludge', 'digester'),
+
+            # CORRECTED Water flow: Groundwater → Pump → Primary GW → (Agr | Secondary GW → Urban)
+            ('groundwater', 'pump'),
+            ('pump', 'primary_gw'),
+            ('primary_gw', 'water_agr'),  # Direct to agricultural
+            ('primary_gw', 'secondary_gw'),  # OR to secondary treatment
+            ('secondary_gw', 'water_urban'),  # Secondary → urban water
+
+            # Water tank storage
+            ('primary_gw', 'water_tank'),  # Can store treated water
+            ('water_tank', 'water_agr'),
+
+            # CORRECTED Wastewater flow: Urban → Primary WW → (Agr | Secondary WW → Urban)
+            ('water_urban', 'primary_ww'),  # Urban use → wastewater
+            ('primary_ww', 'water_agr'),  # Primary WW → can reuse for agriculture
+            ('primary_ww', 'secondary_ww'),  # OR to secondary WW
+            ('secondary_ww', 'water_urban'),  # Secondary WW → back to urban
+
+            # Sludge from wastewater treatment
+            ('primary_ww', 'sludge_storage'), ('secondary_ww', 'sludge_storage'),
+
+            # Sludge management
+            ('sludge_storage', 'composting'), ('sludge_storage', 'digester'),
+            ('biomass', 'digester'),
+
+            # Digester outputs
+            ('digester', 'chp'),  # Biogas to CHP
+            ('digester', 'market_biogas'),
+
+            # Markets
             ('composting', 'market_compost'),
-            ('digester', 'market_biogas'), ('digester', 'chp'),
             ('chp', 'market_co2'), ('boiler', 'market_co2'),
         ]
 
