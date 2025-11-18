@@ -261,9 +261,9 @@ class SaravanWindWaterOptimizer:
     def _export_results(self):
         """Export results to files"""
 
-        # Create output directory on Desktop
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        output_dir = os.path.join(desktop, 'saravan_wind_water_results')
+        # Create output directory in project folder
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        output_dir = os.path.join(project_dir, 'results')
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"\n{'='*80}")
@@ -408,4 +408,4 @@ if __name__ == "__main__":
     print(f"\n{'='*80}")
     print("✅ SARAVAN WIND-WATER NEXUS OPTIMIZATION COMPLETE!")
     print(f"{'='*80}")
-    print(f"\nResults saved to Desktop/saravan_wind_water_results/")
+    print(f"\nResults saved to ./saravan_wind_water_nexus/results/")

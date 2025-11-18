@@ -253,8 +253,8 @@ class CarbonEmissionsVisualizer:
 
         # Add summary text
         fig.text(0.5, 0.02,
-                f"Total 20-year revenue: ${projection['total_nominal']:,.0f} | " +
-                f"NPV @ 8%: ${projection['npv_at_8pct']:,.0f}",
+                f"Total 20-year revenue: \\${projection['total_nominal']:,.0f} | " +
+                f"NPV @ 8%%: \\${projection['npv_at_8pct']:,.0f}",
                 ha='center', fontsize=12, fontweight='bold',
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 

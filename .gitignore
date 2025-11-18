@@ -45,6 +45,7 @@ data/
 results/
 output/
 *_results/
+saravan_wind_water_nexus/results/
 
 # Jupyter
 .ipynb_checkpoints/
