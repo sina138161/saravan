@@ -7,10 +7,11 @@ import pypsa
 import numpy as np
 import pandas as pd
 from typing import Dict, Optional
-from wind_turbine_models import WindTurbineModels
-from water_system_model import WaterSystemModel
-from carbon_market_model import CarbonMarketModel
-from thermal_carbon_systems import CHPModel, GasBoilerModel, SludgeManagementSystem, CCUSystem, MarketModel
+from models.wind_turbines import WindTurbineModels
+from models.water_treatment import WaterSystemModel
+from models.carbon_market import CarbonMarketModel
+from models.thermal_systems import CHPModel, GasBoilerModel
+from models.sludge_biogas import SludgeManagementSystem, CCUSystem, MarketModel
 
 
 class WindWaterNetworkBuilder:
