@@ -18,9 +18,10 @@ class WindWaterNetworkBuilder:
     Build PyPSA network for wind-water-energy optimization
 
     Simplified version focusing on:
-    - Wind turbines (HAWT, VAWT, Bladeless)
+    - Wind turbines (HAWT, Bladeless)
     - Battery storage
     - Water pumping and storage
+    - Power grid connection (gas-based electricity)
     - Carbon revenue integration
     """
 
@@ -62,11 +63,10 @@ class WindWaterNetworkBuilder:
             PyPSA Network object
         """
 
-        # Default turbine mix
+        # Default turbine mix (VAWT removed as per requirement)
         if turbine_mix is None:
             turbine_mix = {
                 'HAWT': 5,
-                'VAWT': 3,
                 'Bladeless': 15
             }
 
@@ -475,17 +475,18 @@ class WindWaterNetworkBuilder:
             )
             print(f"   Electricity baseload: {baseload_kw} kW")
 
-        # Add grid connection with natural gas consumption
-        # Grid power is generated from natural gas (efficiency ~45%)
+        # Add grid connection - natural gas to electricity (power network)
+        # This represents the national grid's gas-fired power plants
+        # Important: Iran has natural gas imbalance, so grid electricity depends on gas availability
         self.network.add(
-            "Generator",
-            "Grid_Gas_Power",
-            bus="electricity",
+            "Link",
+            "Power_Network_NG_to_Elec",
+            bus0="natural_gas",  # Input: natural gas
+            bus1="electricity",  # Output: electricity
             p_nom=5000,  # 5 MW capacity
-            marginal_cost=120,  # $/MWh (natural gas price + grid markup)
+            efficiency=0.45,  # 45% gas-to-electricity efficiency (typical for CCGT)
+            marginal_cost=80,  # Grid markup ($/MWh-electricity)
             capital_cost=0,  # Grid already exists
-            efficiency=0.45,  # 45% gas-to-electricity efficiency
-            carrier="natural_gas"
         )
 
         # Add expensive backup for emergency only
