@@ -41,11 +41,15 @@ Thumbs.db
 *.xlsx
 *.json
 *.log
-data/
 results/
 output/
 *_results/
 saravan_wind_water_nexus/results/
+saravan_wind_water_nexus/data/input/
+
+# Allow data directory Python files (but not generated data)
+!saravan_wind_water_nexus/data/*.py
+!saravan_wind_water_nexus/data/__init__.py
 
 # Jupyter
 .ipynb_checkpoints/
