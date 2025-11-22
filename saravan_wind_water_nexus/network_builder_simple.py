@@ -545,12 +545,13 @@ class WindWaterNetworkBuilder:
 
         if 'biomass' in self.data:
             biomass_df = self.data['biomass']
-            biomass_available = biomass_df['biomass_available_kg_h'].values[:len(self.network.snapshots)]
+            # New column name: biomass_available_ton_h (changed from kg_h)
+            biomass_available_ton = biomass_df['biomass_available_ton_h'].values[:len(self.network.snapshots)]
 
             # Biomass is available as a generator (source)
-            # Convert kg/h to kW-equivalent for PyPSA (using energy content)
-            energy_per_kg = 4.2  # kWh/kg
-            biomass_power = biomass_available * energy_per_kg  # kW-equivalent
+            # Convert ton/h to kW-equivalent for PyPSA (using energy content)
+            energy_per_ton = 4200  # kWh/ton (= 4.2 kWh/kg × 1000)
+            biomass_power = biomass_available_ton * energy_per_ton  # kW-equivalent
 
             # Add biomass as a limited generator
             self.network.add(
@@ -564,7 +565,7 @@ class WindWaterNetworkBuilder:
                 carrier='biomass'
             )
 
-            print(f"      Biomass availability: {biomass_available.sum():,.0f} kg (total)")
+            print(f"      Biomass availability: {biomass_available_ton.sum():,.2f} ton (total)")
             print(f"      Energy content: {biomass_power.sum():,.0f} kWh-thermal (total)")
         else:
             print(f"      WARNING: No biomass data available!")
