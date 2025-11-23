@@ -19,8 +19,8 @@ from prepare_data import prepare_data
 from build_network import build_network
 from solve_network import solve_network
 from config import config
-from carbon_market_model import CarbonMarketModel
-from wind_turbine_models import WindTurbineModels
+from models.carbon_market import CarbonMarketModel
+from models.wind_turbines import WindTurbineModels
 
 
 def calculate_carbon_metrics(dataset, turbine_mix, hours):
@@ -181,9 +181,9 @@ def create_visualizations(results, network, dataset):
         print("CREATING STANDARD VISUALIZATIONS")
         print("="*70)
 
-        from visualization_nexus import NexusVisualizer
-        from carbon_emissions_visualizer import CarbonEmissionsVisualizer
-        from carbon_market_model import CarbonMarketModel
+        from plotting.nexus_plots import NexusVisualizer
+        from plotting.carbon_plots import CarbonEmissionsVisualizer
+        from models.carbon_market import CarbonMarketModel
 
         visualizer = NexusVisualizer(
             dataset=dataset,
@@ -210,7 +210,7 @@ def create_visualizations(results, network, dataset):
         print("CREATING PUBLICATION-READY FIGURES")
         print("="*70)
 
-        from publication_visualizations import PublicationVisualizer
+        from plotting.publication_figures import PublicationVisualizer
 
         publication_visualizer = PublicationVisualizer(
             network=network,

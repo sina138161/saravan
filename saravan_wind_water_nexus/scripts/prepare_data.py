@@ -1,8 +1,11 @@
 """
 Data Preparation Script
 
-Generates time series data for wind, dust, temperature, and water demand
-for the Saravan Wind-Water-Energy-Carbon Nexus model.
+Generates time series data for wind, dust, temperature, water demand,
+gas network, groundwater, biomass, heat, and electricity for the
+Saravan Wind-Water-Energy-Carbon Nexus model.
+
+NOTE: No industrial sector - Saravan has no industrial activity
 """
 
 import sys
@@ -11,7 +14,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-from data_generator import SaravanDataGenerator
+from data.data_generator import SaravanDataGenerator
 from config import config
 
 
@@ -65,12 +68,16 @@ def prepare_data(hours=None, start_date=None, seed=None):
     print(f"  Temperature: {dataset['temperature']['temperature_c'].mean():.1f}°C (avg)")
     print(f"  Water demand: {dataset['water_demand']['total_m3h'].sum():,.0f} m³ (total)")
 
-    # Export if requested
+    # Export to Excel (primary format)
+    data_dir = Path(__file__).parent.parent / 'data' / 'input'
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_generator.export_to_excel(dataset, str(data_dir))
+    print(f"\n✓ Data exported to Excel: {data_dir}")
+
+    # Also export to CSV if requested
     if config.EXPORT_RESULTS_CSV:
-        data_dir = config.DATA_DIR
-        data_dir.mkdir(parents=True, exist_ok=True)
         data_generator.export_to_csv(dataset, str(data_dir))
-        print(f"\n✓ Data exported to {data_dir}")
+        print(f"✓ Data also exported to CSV")
 
     return dataset
 
@@ -78,3 +85,4 @@ def prepare_data(hours=None, start_date=None, seed=None):
 if __name__ == "__main__":
     dataset = prepare_data()
     print("\n✅ Data preparation complete!")
+    print(f"   Profiles saved to: data/input/")

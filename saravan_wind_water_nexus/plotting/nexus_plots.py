@@ -170,31 +170,38 @@ class NexusVisualizer:
 
         timestamps = self._get_timestamps()
 
-        fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+        # Only use turbine types that exist in the network (VAWT removed)
+        turbine_types = ['HAWT', 'Bladeless']
+        available_turbines = [t for t in turbine_types
+                              if f'Wind_{t}' in self.network.generators_t.p.columns]
 
-        turbine_types = ['HAWT', 'VAWT', 'Bladeless']
+        if not available_turbines:
+            return
 
-        for idx, (ax, turb_type) in enumerate(zip(axes, turbine_types)):
+        n_turbines = len(available_turbines)
+        fig, axes = plt.subplots(n_turbines, 1, figsize=(14, 4*n_turbines), sharex=True)
+        if n_turbines == 1:
+            axes = [axes]
+
+        for idx, (ax, turb_type) in enumerate(zip(axes, available_turbines)):
             gen_name = f'Wind_{turb_type}'
+            power = self.network.generators_t.p[gen_name].values
 
-            if gen_name in self.network.generators_t.p.columns:
-                power = self.network.generators_t.p[gen_name].values
+            ax.fill_between(timestamps[:len(power)], power,
+                           alpha=0.4, color=self.colors.get(turb_type, 'gray'))
+            ax.plot(timestamps[:len(power)], power,
+                   linewidth=1.5, color=self.colors.get(turb_type, 'gray'))
 
-                ax.fill_between(timestamps[:len(power)], power,
-                               alpha=0.4, color=self.colors[turb_type])
-                ax.plot(timestamps[:len(power)], power,
-                       linewidth=1.5, color=self.colors[turb_type])
+            # Add statistics
+            total_energy = power.sum()
+            avg_power = power.mean()
+            max_power = power.max()
 
-                # Add statistics
-                total_energy = power.sum()
-                avg_power = power.mean()
-                max_power = power.max()
-
-                ax.text(0.02, 0.95,
-                       f'Total: {total_energy:,.0f} kWh\nAvg: {avg_power:.1f} kW\nMax: {max_power:.1f} kW',
-                       transform=ax.transAxes,
-                       verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            ax.text(0.02, 0.95,
+                   f'Total: {total_energy:,.0f} kWh\nAvg: {avg_power:.1f} kW\nMax: {max_power:.1f} kW',
+                   transform=ax.transAxes,
+                   verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
             ax.set_ylabel(f'{turb_type}\nPower (kW)', fontsize=11)
             ax.grid(True, alpha=0.3)
@@ -215,28 +222,33 @@ class NexusVisualizer:
 
         fig, ax = plt.subplots(figsize=self.figsize_double)
 
-        # Collect generation data
+        # Collect generation data (VAWT removed)
         generation_data = {}
-        turbine_types = ['HAWT', 'VAWT', 'Bladeless']
+        turbine_types = ['HAWT', 'Bladeless']
+        available_turbines = []
 
         for turb_type in turbine_types:
             gen_name = f'Wind_{turb_type}'
             if gen_name in self.network.generators_t.p.columns:
                 generation_data[turb_type] = self.network.generators_t.p[gen_name].values
-            else:
-                generation_data[turb_type] = np.zeros(len(timestamps))
+                available_turbines.append(turb_type)
+
+        if not available_turbines:
+            plt.close()
+            return
 
         # Create stacked area plot
-        ax.stackplot(timestamps[:len(generation_data['HAWT'])],
-                    generation_data['HAWT'],
-                    generation_data['VAWT'],
-                    generation_data['Bladeless'],
-                    labels=['HAWT', 'VAWT', 'Bladeless'],
-                    colors=[self.colors['HAWT'], self.colors['VAWT'], self.colors['Bladeless']],
+        stack_data = [generation_data[t] for t in available_turbines]
+        stack_colors = [self.colors.get(t, 'gray') for t in available_turbines]
+
+        ax.stackplot(timestamps[:len(stack_data[0])],
+                    *stack_data,
+                    labels=available_turbines,
+                    colors=stack_colors,
                     alpha=0.7)
 
         # Add total generation line
-        total_gen = sum(generation_data.values())
+        total_gen = sum(stack_data)
         ax.plot(timestamps[:len(total_gen)], total_gen,
                color='black', linewidth=2, label='Total', linestyle='--')
 
@@ -402,31 +414,41 @@ class NexusVisualizer:
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=self.figsize_double)
 
-        turbine_types = ['HAWT', 'VAWT', 'Bladeless']
-
-        # Plot 1: Average power output by condition
-        avg_power = {turb: [] for turb in turbine_types}
-
+        # Only use turbine types that exist in the network (VAWT removed)
+        turbine_types = ['HAWT', 'Bladeless']
+        available_turbines = []
         for turb_type in turbine_types:
             gen_name = f'Wind_{turb_type}'
             if gen_name in self.network.generators_t.p.columns:
-                power = self.network.generators_t.p[gen_name].values
-                capacity = self.network.generators.loc[gen_name, 'p_nom']
+                available_turbines.append(turb_type)
 
-                for condition in conditions:
-                    if np.sum(condition) > 0:
-                        avg_cf = power[condition].mean() / capacity if capacity > 0 else 0
-                        avg_power[turb_type].append(avg_cf * 100)
-                    else:
-                        avg_power[turb_type].append(0)
+        if not available_turbines:
+            plt.close()
+            return
+
+        # Plot 1: Average power output by condition
+        avg_power = {turb: [] for turb in available_turbines}
+
+        for turb_type in available_turbines:
+            gen_name = f'Wind_{turb_type}'
+            power = self.network.generators_t.p[gen_name].values
+            capacity = self.network.generators.loc[gen_name, 'p_nom']
+
+            for condition in conditions:
+                if np.sum(condition) > 0:
+                    avg_cf = power[condition].mean() / capacity if capacity > 0 else 0
+                    avg_power[turb_type].append(avg_cf * 100)
+                else:
+                    avg_power[turb_type].append(0)
 
         x = np.arange(len(categories))
-        width = 0.25
+        width = 0.35 if len(available_turbines) == 2 else 0.25
+        n_turbines = len(available_turbines)
 
-        for idx, turb_type in enumerate(turbine_types):
-            offset = (idx - 1) * width
+        for idx, turb_type in enumerate(available_turbines):
+            offset = (idx - (n_turbines - 1) / 2) * width
             bars = ax1.bar(x + offset, avg_power[turb_type], width,
-                          label=turb_type, color=self.colors[turb_type], alpha=0.7)
+                          label=turb_type, color=self.colors.get(turb_type, 'gray'), alpha=0.7)
 
         ax1.set_ylabel('Average Capacity Factor (%)', fontsize=12)
         ax1.set_title('Turbine Performance by Dust Condition', fontsize=12, fontweight='bold')
@@ -437,20 +459,20 @@ class NexusVisualizer:
 
         # Plot 2: Dust impact percentage
         # Calculate average loss compared to clean conditions
-        losses = {turb: [] for turb in turbine_types}
+        losses = {turb: [] for turb in available_turbines}
 
-        for turb_type in turbine_types:
+        for turb_type in available_turbines:
             if len(avg_power[turb_type]) >= 3:
                 clean_cf = avg_power[turb_type][0]
                 for cf in avg_power[turb_type]:
                     loss = ((clean_cf - cf) / clean_cf * 100) if clean_cf > 0 else 0
                     losses[turb_type].append(loss)
 
-        for idx, turb_type in enumerate(turbine_types):
+        for idx, turb_type in enumerate(available_turbines):
             if len(losses[turb_type]) >= 3:
-                offset = (idx - 1) * width
+                offset = (idx - (n_turbines - 1) / 2) * width
                 bars = ax2.bar(x + offset, losses[turb_type], width,
-                              label=turb_type, color=self.colors[turb_type], alpha=0.7)
+                              label=turb_type, color=self.colors.get(turb_type, 'gray'), alpha=0.7)
 
         ax2.set_ylabel('Power Loss vs Clean Conditions (%)', fontsize=12)
         ax2.set_title('Dust-Induced Power Loss', fontsize=12, fontweight='bold')
