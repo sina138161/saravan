@@ -7,6 +7,7 @@ Organized by technology type:
 - thermal: Thermal systems (Microturbine, Heat Recovery, Gas Boiler)
 - biogas: Biogas and sludge management (Composting, Digester, Dewatering, CCU)
 - water: Water systems (Wells, Treatment, Storage)
+- storage: Energy and thermal storage (Battery ESS, Thermal Storage)
 - carbon_market: Carbon market revenue model
 """
 
@@ -24,6 +25,9 @@ from .biogas import Composting, AnaerobicDigester, Dewatering, CCU
 
 # Water systems
 from .water import GroundwaterWell, WaterTreatment, WastewaterTreatment, ElevatedStorage
+
+# Storage systems
+from .storage import BatteryESS, ThermalStorage
 
 # Carbon market
 from .carbon_market import CarbonMarket, CarbonMarketTier
@@ -53,6 +57,10 @@ __all__ = [
     'WaterTreatment',
     'WastewaterTreatment',
     'ElevatedStorage',
+
+    # Storage
+    'BatteryESS',
+    'ThermalStorage',
 
     # Carbon
     'CarbonMarket',

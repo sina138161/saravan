@@ -96,9 +96,121 @@ class ElevatedStorage(TechnologyBase):
             'elevation': self.elevation,
             'tank_specs': tank_spec,
             'tower_specs': tower_spec,
+
+            # Exact formula parameters
+            'V_awt_max': tank_spec['capacity'],  # Maximum capacity (m³)
+            'V_awt_min': tank_spec['capacity'] * 0.10,  # Minimum capacity (10% of max)
+            'theta_awt': 0.0001,  # Evaporation and seepage rate per hour (0.01%/h)
+
+            # Economics
             'capex': total_capex,
             'opex': annual_opex,
             'lifetime': 30  # years
+        }
+
+    def calculate_tank_state_exact(self, v_awt_prev: float,
+                                    v_awt_in: float,
+                                    v_awt_out: float,
+                                    delta_t: float = 1.0,
+                                    u: int = None) -> Dict:
+        """
+        Calculate tank state using exact formula
+
+        Formula:
+            v_awt(t) = (1 - ϑ_awt × Δt) × v_awt(t-1) + v_awt,in(t) - v_awt,out(t)
+
+        Constraints:
+            V_awt,min ≤ v_awt(t) ≤ V_awt,max
+
+        Binary Variable (if used):
+            u(t) ∈ {0,1}
+            v_awt,in(t) ≤ u(t) × V_awt,max
+            v_awt,out(t) ≤ (1-u(t)) × V_awt,max
+
+        Args:
+            v_awt_prev: Previous water volume v_awt(t-1) (m³)
+            v_awt_in: Water inflow v_awt,in(t) (m³)
+            v_awt_out: Water outflow v_awt,out(t) (m³)
+            delta_t: Time step Δt (hours, default 1.0)
+            u: Binary variable for charging/discharging mode (0 or 1, optional)
+
+        Returns:
+            Dictionary with tank state and constraint checks
+        """
+        # Get specs
+        theta_awt = self.specs['theta_awt']
+        V_awt_max = self.specs['V_awt_max']
+        V_awt_min = self.specs['V_awt_min']
+
+        # Formula: v_awt(t) = (1 - ϑ_awt × Δt) × v_awt(t-1) + v_awt,in(t) - v_awt,out(t)
+        v_awt = (1 - theta_awt * delta_t) * v_awt_prev + v_awt_in - v_awt_out
+
+        # Constraint 1: Capacity limits
+        # V_awt,min ≤ v_awt(t) ≤ V_awt,max
+        capacity_constraint_met = V_awt_min <= v_awt <= V_awt_max
+        violations = []
+
+        if v_awt < V_awt_min:
+            violations.append(f"Tank volume {v_awt:.2f} m³ below minimum {V_awt_min:.2f} m³")
+        elif v_awt > V_awt_max:
+            violations.append(f"Tank volume {v_awt:.2f} m³ exceeds maximum {V_awt_max:.2f} m³")
+
+        # Constraint 2: Binary variable (if provided)
+        # u(t) ∈ {0,1}
+        # v_awt,in(t) ≤ u(t) × V_awt,max
+        # v_awt,out(t) ≤ (1-u(t)) × V_awt,max
+        binary_constraint_met = True
+        if u is not None:
+            if u not in [0, 1]:
+                binary_constraint_met = False
+                violations.append(f"Binary variable u={u} must be 0 or 1")
+            else:
+                # Check inflow constraint
+                if v_awt_in > u * V_awt_max:
+                    binary_constraint_met = False
+                    violations.append(f"Inflow {v_awt_in:.2f} m³ exceeds u×V_max = {u * V_awt_max:.2f} m³")
+
+                # Check outflow constraint
+                if v_awt_out > (1 - u) * V_awt_max:
+                    binary_constraint_met = False
+                    violations.append(f"Outflow {v_awt_out:.2f} m³ exceeds (1-u)×V_max = {(1-u) * V_awt_max:.2f} m³")
+
+        # Calculate fill level
+        fill_level = v_awt / V_awt_max if V_awt_max > 0 else 0
+
+        # Water loss due to evaporation/seepage
+        water_loss = theta_awt * delta_t * v_awt_prev
+
+        return {
+            # Inputs
+            'v_awt_prev_m3': v_awt_prev,
+            'v_awt_in_m3': v_awt_in,
+            'v_awt_out_m3': v_awt_out,
+            'delta_t_hours': delta_t,
+            'u': u,
+
+            # Output
+            'v_awt_m3': v_awt,
+            'fill_level': fill_level,
+            'fill_level_pct': fill_level * 100,
+
+            # Parameters
+            'theta_awt': theta_awt,
+            'V_awt_max': V_awt_max,
+            'V_awt_min': V_awt_min,
+
+            # Water balance
+            'water_loss_m3': water_loss,
+            'net_change_m3': v_awt - v_awt_prev,
+
+            # Constraints
+            'capacity_constraint_met': capacity_constraint_met,
+            'binary_constraint_met': binary_constraint_met if u is not None else True,
+            'all_constraints_met': capacity_constraint_met and (binary_constraint_met if u is not None else True),
+            'violations': violations,
+
+            # Formula used
+            'formula': 'v_awt(t) = (1 - ϑ_awt × Δt) × v_awt(t-1) + v_awt,in(t) - v_awt,out(t)'
         }
 
     def calculate_potential_energy_storage(self, fill_level: float = 1.0) -> Dict:
