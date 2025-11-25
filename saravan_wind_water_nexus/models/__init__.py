@@ -1,28 +1,68 @@
 """
-Component Models for Saravan Wind-Water-Energy-Carbon Nexus
+Technology models for Saravan Wind-Water Nexus
 
-This package contains all the physical component models:
-- Wind turbines (HAWT, Bladeless)
-- Water treatment systems
-- Thermal systems (CHP, Boiler)
-- Sludge management and biogas production
-- Carbon market model
+Organized by technology type:
+- base: Base classes for all technologies
+- wind: Wind turbine models (HAWT, Bladeless)
+- thermal: Thermal systems (Microturbine, Heat Recovery, Gas Boiler)
+- biogas: Biogas and sludge management (Composting, Digester, Dewatering, CCU)
+- water: Water systems (Wells, Treatment, Storage)
+- storage: Energy and thermal storage (Battery ESS, Thermal Storage)
+- carbon_market: Carbon market revenue model
 """
 
-from .wind_turbines import WindTurbineModels
-from .water_treatment import WaterSystemModel
-from .thermal_systems import CHPModel, GasBoilerModel
-from .sludge_biogas import SludgeManagementSystem, CCUSystem, MarketModel
-from .carbon_market import CarbonMarketModel, CarbonMarketTier
+# Base classes
+from .base import TechnologyBase, EconomicCalculator
+
+# Wind turbines
+from .wind import HAWT, Bladeless
+
+# Thermal systems
+from .thermal import GasMicroturbine, HeatRecovery, GasBoiler
+
+# Biogas and sludge management
+from .biogas import Composting, AnaerobicDigester, Dewatering, CCU
+
+# Water systems
+from .water import GroundwaterWell, WaterTreatment, WastewaterTreatment, ElevatedStorage
+
+# Storage systems
+from .storage import BatteryESS, ThermalStorage
+
+# Carbon market
+from .carbon_market import CarbonMarket, CarbonMarketTier
 
 __all__ = [
-    'WindTurbineModels',
-    'WaterSystemModel',
-    'CHPModel',
-    'GasBoilerModel',
-    'SludgeManagementSystem',
-    'CCUSystem',
-    'MarketModel',
-    'CarbonMarketModel',
+    # Base
+    'TechnologyBase',
+    'EconomicCalculator',
+
+    # Wind
+    'HAWT',
+    'Bladeless',
+
+    # Thermal
+    'GasMicroturbine',
+    'HeatRecovery',
+    'GasBoiler',
+
+    # Biogas
+    'Composting',
+    'AnaerobicDigester',
+    'Dewatering',
+    'CCU',
+
+    # Water
+    'GroundwaterWell',
+    'WaterTreatment',
+    'WastewaterTreatment',
+    'ElevatedStorage',
+
+    # Storage
+    'BatteryESS',
+    'ThermalStorage',
+
+    # Carbon
+    'CarbonMarket',
     'CarbonMarketTier',
 ]
