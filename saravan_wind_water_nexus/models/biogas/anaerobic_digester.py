@@ -11,14 +11,15 @@ class AnaerobicDigester(TechnologyBase):
     """
     Anaerobic Digester System
 
-    Process:
-    Sludge + Biomass + Heat + Electricity → Biogas + Digestate (fertilizer)
+    Inputs:
+    - Sludge (from wastewater treatment)
+    - Biomass
+    - Agricultural water (process water + recycled water from dewatering)
+    - Heat (for maintaining digester temperature at 35°C)
 
     Outputs:
-    - Biogas (for CHP or boiler)
-    - Digestate (organic fertilizer)
-    - Heat requirement
-    - Electricity requirement
+    - Biogas (CH4 + CO2)
+    - Digestate (liquid, goes to dewatering unit)
     """
 
     def _define_specs(self) -> Dict:
@@ -29,234 +30,157 @@ class AnaerobicDigester(TechnologyBase):
         """
         return {
             'name': 'Anaerobic_Digester_Biogas',
-            'sludge_input_ratio': 0.60,          # 60% sludge, 40% biomass
-            'biomass_input_ratio': 0.40,
-            'biogas_yield_m3_per_kg': 0.40,      # 0.4 m³ biogas per kg organic matter
+
+            # Input ratios
+            'sludge_input_ratio': 0.40,          # 40% sludge (dry weight basis)
+            'biomass_input_ratio': 0.60,         # 60% biomass (dry weight basis)
+
+            # Biogas production
+            'biogas_yield_m3_per_kg_dry': 0.40,  # 0.4 m³ biogas per kg dry organic matter
             'methane_content': 0.60,             # 60% CH4, 40% CO2
             'biogas_lhv': 6.0,                   # kWh/m³
-            'digestate_output_ratio': 0.85,      # 85% of input mass
-            'digestate_n_content': 0.03,         # 3% nitrogen
+
+            # Digestate output
+            'digestate_output_ratio': 0.85,      # 85% of input mass (including water)
+            'digestate_solids_content': 0.05,    # 5% solids (very liquid)
+            'digestate_n_content': 0.03,         # 3% nitrogen (of dry solids)
             'digestate_p_content': 0.015,        # 1.5% phosphorus
             'digestate_k_content': 0.015,        # 1.5% potassium
-            'digestate_market_price_per_ton': 60, # $/ton (higher quality than compost)
-            'electricity_consumption_kwh_per_m3': 0.10,  # For mixing, pumping
-            'heat_consumption_kwh_per_m3': 2.0,          # For maintaining 35°C
-            'capex': 200000,                     # $ (for digester)
-            'opex': 0.15,                        # $/m³ biogas
-            'lifetime': 20,                      # years
-            'retention_time_days': 20            # 20 days hydraulic retention time
+
+            # Water requirements
+            'water_to_solids_ratio': 10,         # 10 kg water per kg dry solids
+            'process_water_consumption': 1.2,    # Including losses (evaporation, etc.)
+
+            # Heat requirements
+            'digester_temperature': 35,          # °C (mesophilic digestion)
+            'heat_loss_kwh_per_m3_day': 2.0,    # Heat loss from digester
+            'heat_for_feedstock_kwh_per_kg': 0.05,  # Heating feedstock from 20°C to 35°C
+
+            # Operating parameters
+            'retention_time_days': 20,           # 20 days hydraulic retention time
+            'organic_loading_rate': 3.0,         # kg VS/m³/day (volatile solids)
+            'mixing_intensity': 'medium',        # No electricity needed (passive mixing via biogas)
+
+            # Economics
+            'capex': 200000,                     # $ (for digester vessel + equipment)
+            'opex': 0.15,                        # $/m³ biogas produced
+            'lifetime': 20                       # years
         }
 
-    def calculate_biogas_production(self, sludge_kg: float,
-                                   biomass_kg: float) -> Dict:
+    def calculate_biogas_production(self, sludge_kg_dry: float,
+                                   biomass_kg_dry: float,
+                                   process_water_m3: float,
+                                   heat_input_kwh: float) -> Dict:
         """
         Calculate biogas and digestate production
 
         Args:
-            sludge_kg: Sludge input (kg dry solids)
-            biomass_kg: Biomass input (kg dry matter)
+            sludge_kg_dry: Sludge input (kg dry solids)
+            biomass_kg_dry: Biomass input (kg dry matter)
+            process_water_m3: Process water input including recycled water (m³)
+            heat_input_kwh: Heat input for maintaining temperature (kWh)
 
         Returns:
             Dictionary with production details
         """
-        # Total input
-        total_input = sludge_kg + biomass_kg
+        # Total dry input
+        total_dry_input_kg = sludge_kg_dry + biomass_kg_dry
 
-        # Check ratio
-        actual_sludge_ratio = sludge_kg / total_input if total_input > 0 else 0
-        optimal_ratio = self.specs['sludge_input_ratio']
+        # Check ratios
+        actual_sludge_ratio = sludge_kg_dry / total_dry_input_kg if total_dry_input_kg > 0 else 0
+        optimal_sludge_ratio = self.specs['sludge_input_ratio']
 
-        # Biogas production
-        biogas_m3 = total_input * self.specs['biogas_yield_m3_per_kg']
+        # Water requirement check
+        required_water_m3 = (total_dry_input_kg * self.specs['water_to_solids_ratio']) / 1000
+        water_deficit_m3 = max(0, required_water_m3 - process_water_m3)
+
+        # Heat requirement check
+        required_heat_kwh = (
+            total_dry_input_kg * self.specs['heat_for_feedstock_kwh_per_kg'] +
+            (total_dry_input_kg / 1000) * self.specs['heat_loss_kwh_per_m3_day'] * self.specs['retention_time_days']
+        )
+        heat_deficit_kwh = max(0, required_heat_kwh - heat_input_kwh)
+
+        # Biogas production (if sufficient water and heat)
+        if water_deficit_m3 > 0 or heat_deficit_kwh > 0:
+            # Reduced production due to insufficient resources
+            production_factor = min(
+                process_water_m3 / required_water_m3 if required_water_m3 > 0 else 1.0,
+                heat_input_kwh / required_heat_kwh if required_heat_kwh > 0 else 1.0
+            )
+        else:
+            production_factor = 1.0
+
+        biogas_m3 = total_dry_input_kg * self.specs['biogas_yield_m3_per_kg_dry'] * production_factor
         biogas_energy_kwh = biogas_m3 * self.specs['biogas_lhv']
 
         # Methane content
         methane_m3 = biogas_m3 * self.specs['methane_content']
+        co2_m3 = biogas_m3 * (1 - self.specs['methane_content'])
 
         # Digestate production
-        digestate_kg = total_input * self.specs['digestate_output_ratio']
+        # Total mass = dry solids + water
+        total_mass_kg = total_dry_input_kg + (process_water_m3 * 1000)
+        digestate_kg = total_mass_kg * self.specs['digestate_output_ratio']
+        digestate_m3 = digestate_kg / 1000  # Assume density ~1000 kg/m³
 
-        # Nutrient content
-        n_content_kg = digestate_kg * self.specs['digestate_n_content']
-        p_content_kg = digestate_kg * self.specs['digestate_p_content']
-        k_content_kg = digestate_kg * self.specs['digestate_k_content']
+        # Dry solids in digestate
+        digestate_dry_solids_kg = total_dry_input_kg * 0.70  # 30% degraded
+        digestate_moisture = (digestate_kg - digestate_dry_solids_kg) / digestate_kg
 
-        # Energy requirements
-        electricity_required_kwh = biogas_m3 * self.specs['electricity_consumption_kwh_per_m3']
-        heat_required_kwh = biogas_m3 * self.specs['heat_consumption_kwh_per_m3']
+        # Nutrients in digestate (dry basis)
+        n_content_kg = digestate_dry_solids_kg * self.specs['digestate_n_content']
+        p_content_kg = digestate_dry_solids_kg * self.specs['digestate_p_content']
+        k_content_kg = digestate_dry_solids_kg * self.specs['digestate_k_content']
 
         return {
-            'total_input_kg': total_input,
+            # Inputs
+            'sludge_dry_kg': sludge_kg_dry,
+            'biomass_dry_kg': biomass_kg_dry,
+            'total_dry_input_kg': total_dry_input_kg,
+            'process_water_m3': process_water_m3,
+            'heat_input_kwh': heat_input_kwh,
             'sludge_ratio': actual_sludge_ratio,
-            'optimal_ratio': optimal_ratio,
+            'optimal_sludge_ratio': optimal_sludge_ratio,
+
+            # Resource requirements and deficits
+            'required_water_m3': required_water_m3,
+            'water_deficit_m3': water_deficit_m3,
+            'water_sufficient': water_deficit_m3 == 0,
+            'required_heat_kwh': required_heat_kwh,
+            'heat_deficit_kwh': heat_deficit_kwh,
+            'heat_sufficient': heat_deficit_kwh == 0,
+            'production_factor': production_factor,
+
+            # Biogas outputs
             'biogas_m3': biogas_m3,
             'biogas_energy_kwh': biogas_energy_kwh,
             'methane_m3': methane_m3,
+            'co2_m3': co2_m3,
             'methane_content_pct': self.specs['methane_content'] * 100,
+
+            # Digestate outputs
             'digestate_kg': digestate_kg,
+            'digestate_m3': digestate_m3,
             'digestate_ton': digestate_kg / 1000,
+            'digestate_dry_solids_kg': digestate_dry_solids_kg,
+            'digestate_moisture_pct': digestate_moisture * 100,
+            'digestate_solids_pct': (1 - digestate_moisture) * 100,
             'nitrogen_kg': n_content_kg,
             'phosphorus_kg': p_content_kg,
             'potassium_kg': k_content_kg,
-            'electricity_required_kwh': electricity_required_kwh,
-            'heat_required_kwh': heat_required_kwh,
-            'net_energy_kwh': biogas_energy_kwh - electricity_required_kwh - heat_required_kwh,
-            'energy_ratio': biogas_energy_kwh / (electricity_required_kwh + heat_required_kwh) if (electricity_required_kwh + heat_required_kwh) > 0 else 0,
-            'retention_time_days': self.specs['retention_time_days']
+
+            # Process parameters
+            'retention_time_days': self.specs['retention_time_days'],
+            'digester_temperature_c': self.specs['digester_temperature']
         }
 
-    def calculate_annual_revenue(self, biogas_production: Dict,
-                                biogas_value_per_kwh: float = 0.08) -> Dict:
-        """
-        Calculate annual revenue from biogas and digestate
-
-        Args:
-            biogas_production: Production dictionary from calculate_biogas_production()
-            biogas_value_per_kwh: Value of biogas energy ($/kWh)
-
-        Returns:
-            Revenue details
-        """
-        # Biogas revenue
-        biogas_revenue = biogas_production['biogas_energy_kwh'] * biogas_value_per_kwh
-
-        # Digestate revenue
-        digestate_revenue = biogas_production['digestate_ton'] * self.specs['digestate_market_price_per_ton']
-
-        # Operating cost
-        operating_cost = biogas_production['biogas_m3'] * self.specs['opex']
-
-        # Gross and net revenue
-        gross_revenue = biogas_revenue + digestate_revenue
-        net_revenue = gross_revenue - operating_cost
-
-        return {
-            'biogas_revenue': biogas_revenue,
-            'digestate_revenue': digestate_revenue,
-            'gross_revenue': gross_revenue,
-            'operating_cost': operating_cost,
-            'net_revenue': net_revenue,
-            'revenue_split_biogas_pct': biogas_revenue / gross_revenue * 100 if gross_revenue > 0 else 0,
-            'revenue_split_digestate_pct': digestate_revenue / gross_revenue * 100 if gross_revenue > 0 else 0
-        }
-
-    def calculate_economics(self, annual_sludge_kg: float,
-                           annual_biomass_kg: float,
-                           biogas_value_per_kwh: float = 0.08) -> Dict:
-        """
-        Calculate complete economics for anaerobic digester
-
-        Args:
-            annual_sludge_kg: Annual sludge input (kg)
-            annual_biomass_kg: Annual biomass input (kg)
-            biogas_value_per_kwh: Value of biogas energy ($/kWh)
-
-        Returns:
-            Economic analysis
-        """
-        # Production
-        production = self.calculate_biogas_production(annual_sludge_kg, annual_biomass_kg)
-
-        # Revenue
-        revenue = self.calculate_annual_revenue(production, biogas_value_per_kwh)
-
-        # CAPEX
-        total_capex = self.specs['capex']
-        annual_capex = total_capex / self.specs['lifetime']
-
-        # Total annual cost
-        total_annual_cost = annual_capex + revenue['operating_cost']
-
-        # NPV calculation
-        npv = self.calculate_npv(
-            capex=total_capex,
-            annual_revenue=revenue['gross_revenue'],
-            annual_opex=revenue['operating_cost'],
-            discount_rate=0.08
-        )
-
-        return {
-            'production': production,
-            'revenue': revenue,
-            'capex': total_capex,
-            'annual_capex': annual_capex,
-            'annual_opex': revenue['operating_cost'],
-            'total_annual_cost': total_annual_cost,
-            'npv': npv,
-            'payback_period': self.calculate_payback_period(
-                total_capex,
-                revenue['gross_revenue'],
-                revenue['operating_cost']
-            )
-        }
-
-    def compare_with_composting(self, annual_input_kg: float,
-                               composting_specs: Dict) -> Dict:
-        """
-        Compare digester with composting for same input
-
-        Args:
-            annual_input_kg: Annual organic input (kg)
-            composting_specs: Composting specifications
-
-        Returns:
-            Comparison results
-        """
-        # Split input according to ratios
-        sludge_kg = annual_input_kg * self.specs['sludge_input_ratio']
-        biomass_kg = annual_input_kg * self.specs['biomass_input_ratio']
-
-        # Digester production
-        digester = self.calculate_biogas_production(sludge_kg, biomass_kg)
-
-        # Composting production (approximate)
-        compost_kg = annual_input_kg * composting_specs.get('compost_output_ratio', 0.5)
-
-        return {
-            'input_kg': annual_input_kg,
-            'digester_biogas_kwh': digester['biogas_energy_kwh'],
-            'digester_digestate_kg': digester['digestate_kg'],
-            'digester_net_energy_kwh': digester['net_energy_kwh'],
-            'composting_compost_kg': compost_kg,
-            'energy_advantage_digester': True,
-            'fertilizer_advantage': 'Similar quality, digester produces more nutrients'
-        }
-
-    def calculate_environmental_benefit(self, biogas_production: Dict) -> Dict:
-        """
-        Calculate environmental benefits
-
-        Args:
-            biogas_production: Production dictionary
-
-        Returns:
-            Environmental benefit metrics
-        """
-        # Biogas replaces natural gas
-        # Natural gas emissions: ~0.2 kg CO2/kWh
-        co2_avoided_biogas = biogas_production['biogas_energy_kwh'] * 0.2
-
-        # Digestate avoids synthetic fertilizer
-        # Similar to composting
-        avoided_synthetic_fertilizer_ton = biogas_production['digestate_ton'] * 0.4
-        co2_avoided_fertilizer = avoided_synthetic_fertilizer_ton * 1000 * 2
-
-        # Total benefit
-        total_co2_avoided = co2_avoided_biogas + co2_avoided_fertilizer
-
-        return {
-            'co2_avoided_biogas_kg': co2_avoided_biogas,
-            'co2_avoided_fertilizer_kg': co2_avoided_fertilizer,
-            'total_co2_avoided_kg': total_co2_avoided,
-            'avoided_synthetic_fertilizer_ton': avoided_synthetic_fertilizer_ton
-        }
-
-    def calculate_digester_sizing(self, daily_input_kg: float) -> Dict:
+    def calculate_digester_sizing(self, daily_dry_input_kg: float) -> Dict:
         """
         Calculate digester volume requirements
 
         Args:
-            daily_input_kg: Daily organic input (kg dry matter)
+            daily_dry_input_kg: Daily organic input (kg dry matter)
 
         Returns:
             Sizing specifications
@@ -264,9 +188,11 @@ class AnaerobicDigester(TechnologyBase):
         # Retention time
         retention_days = self.specs['retention_time_days']
 
-        # Total solids in digester (assume 10% solids content)
-        solids_fraction = 0.10
-        daily_volume_m3 = daily_input_kg / (solids_fraction * 1000)  # kg/m³
+        # Water needed
+        daily_water_m3 = (daily_dry_input_kg * self.specs['water_to_solids_ratio']) / 1000
+
+        # Daily volume (solids + water)
+        daily_volume_m3 = (daily_dry_input_kg / 1000) + daily_water_m3
 
         # Required digester volume
         digester_volume_m3 = daily_volume_m3 * retention_days
@@ -274,10 +200,61 @@ class AnaerobicDigester(TechnologyBase):
         # Add 20% safety factor
         digester_volume_design_m3 = digester_volume_m3 * 1.2
 
+        # Daily biogas production
+        daily_biogas_m3 = daily_dry_input_kg * self.specs['biogas_yield_m3_per_kg_dry']
+
+        # Organic loading rate check
+        actual_olr = daily_dry_input_kg / digester_volume_m3
+        optimal_olr = self.specs['organic_loading_rate']
+
         return {
-            'daily_input_kg': daily_input_kg,
+            'daily_dry_input_kg': daily_dry_input_kg,
             'retention_days': retention_days,
             'required_volume_m3': digester_volume_m3,
             'design_volume_m3': digester_volume_design_m3,
-            'daily_biogas_m3': daily_input_kg * self.specs['biogas_yield_m3_per_kg']
+            'daily_biogas_m3': daily_biogas_m3,
+            'daily_water_requirement_m3': daily_water_m3,
+            'organic_loading_rate_actual': actual_olr,
+            'organic_loading_rate_optimal': optimal_olr,
+            'olr_within_limits': abs(actual_olr - optimal_olr) / optimal_olr < 0.2  # Within 20%
+        }
+
+    def calculate_annual_economics(self, annual_biogas_m3: float,
+                                   biogas_value_per_kwh: float = 0.08) -> Dict:
+        """
+        Calculate annual economics
+
+        Args:
+            annual_biogas_m3: Annual biogas production (m³)
+            biogas_value_per_kwh: Value of biogas energy ($/kWh)
+
+        Returns:
+            Economic analysis
+        """
+        # Biogas value
+        annual_biogas_energy_kwh = annual_biogas_m3 * self.specs['biogas_lhv']
+        biogas_revenue = annual_biogas_energy_kwh * biogas_value_per_kwh
+
+        # Operating cost
+        annual_opex = annual_biogas_m3 * self.specs['opex']
+
+        # CAPEX (annualized)
+        total_capex = self.specs['capex']
+        annual_capex = total_capex / self.specs['lifetime']
+
+        # Total cost
+        total_annual_cost = annual_capex + annual_opex
+
+        # Net benefit
+        net_benefit = biogas_revenue - total_annual_cost
+
+        return {
+            'annual_biogas_m3': annual_biogas_m3,
+            'annual_biogas_energy_kwh': annual_biogas_energy_kwh,
+            'biogas_value': biogas_revenue,
+            'annual_opex': annual_opex,
+            'annual_capex': annual_capex,
+            'total_annual_cost': total_annual_cost,
+            'net_annual_benefit': net_benefit,
+            'cost_per_m3_biogas': total_annual_cost / annual_biogas_m3 if annual_biogas_m3 > 0 else 0
         }

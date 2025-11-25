@@ -2,7 +2,8 @@
 Thermal system technology models
 """
 
-from .chp import CHP
+from .gas_microturbine import GasMicroturbine
+from .heat_recovery import HeatRecovery
 from .gas_boiler import GasBoiler
 
-__all__ = ['CHP', 'GasBoiler']
+__all__ = ['GasMicroturbine', 'HeatRecovery', 'GasBoiler']
