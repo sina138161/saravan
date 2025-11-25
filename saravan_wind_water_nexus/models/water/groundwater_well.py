@@ -56,14 +56,16 @@ class GroundwaterWell(TechnologyBase):
         }
 
         submersible_pump = {
-            'power_rating': 30,  # kW rated power
-            'efficiency': 0.75,  # Pump efficiency
+            'power_rating': 30,  # kW rated power (P_ps,max)
+            'efficiency': 0.75,  # Pump efficiency (η_ps)
             'motor_efficiency': 0.90,  # Motor efficiency
             'head_loss_coefficient': 0.002,  # Friction loss per meter pipe
             'capex': 8000,  # $ per pump
             'opex': 400,  # $/year maintenance
             'lifetime': 15,  # years
             'variable_speed': True,  # VFD capability
+            'min_load_fraction': 0.30,  # Minimum part load (30%)
+            'max_ramp_rate': 0.20,  # R_ps,max: maximum ramping rate (20% per hour)
         }
 
         # Aquifer characteristics
@@ -89,6 +91,107 @@ class GroundwaterWell(TechnologyBase):
             'capex': total_capex,
             'opex': total_opex,
             'lifetime': submersible_pump['lifetime']
+        }
+
+    def calculate_pumping_power_exact(self, v_ps_m3_h: float,
+                                      H_m: float,
+                                      v_ps_prev_m3_h: float = None) -> Dict:
+        """
+        Calculate pumping power using exact formula
+
+        Formula:
+            p_ps(t) = (ρ_water × g × v_ps(t) × H) / (η_ps × 367)
+
+        Constraints:
+            P_ps,max × 0.3 ≤ p_ps(t) ≤ P_ps,max
+            v_ps(t-1) - R_ps,max × V_max ≤ v_ps(t) ≤ v_ps(t-1) + R_ps,max × V_max
+
+        Args:
+            v_ps_m3_h: Water flow rate (m³/h)
+            H_m: Total head (m)
+            v_ps_prev_m3_h: Previous flow rate for ramping constraint (m³/h)
+
+        Returns:
+            Power and constraint checks
+        """
+        # Get pump specs
+        pump = self.specs['pump_specs']
+        P_ps_max = pump['power_rating']
+        eta_ps = pump['efficiency'] * pump['motor_efficiency']  # Overall efficiency
+        min_load = pump['min_load_fraction']
+        R_ps_max = pump['max_ramp_rate']
+
+        # Water properties
+        rho_water = 1000  # kg/m³
+        g = 9.81  # m/s²
+
+        # Formula: p_ps(t) = (ρ_water × g × v_ps(t) × H) / (η_ps × 367)
+        # Note: 367 is a unit conversion factor
+        p_ps = (rho_water * g * v_ps_m3_h * H_m) / (eta_ps * 367)
+
+        # Constraint 1: Minimum part load & pump capacity
+        # P_ps,max × 0.3 ≤ p_ps(t) ≤ P_ps,max
+        min_power = P_ps_max * min_load
+        max_power = P_ps_max
+
+        part_load_constraint_met = True
+        violations = []
+
+        if p_ps > 0:  # Only check if pump is running
+            if p_ps < min_power:
+                part_load_constraint_met = False
+                violations.append(f"Power {p_ps:.2f} kW below minimum {min_power:.2f} kW")
+            elif p_ps > max_power:
+                part_load_constraint_met = False
+                violations.append(f"Power {p_ps:.2f} kW exceeds maximum {max_power:.2f} kW")
+
+        # Constraint 2: Ramping constraints
+        # v_ps(t-1) - R_ps,max × V_max ≤ v_ps(t) ≤ v_ps(t-1) + R_ps,max × V_max
+        ramping_constraint_met = True
+        if v_ps_prev_m3_h is not None:
+            well_capacity = self.specs['well_specs']['sustainable_yield']  # V_max
+            max_ramp = R_ps_max * well_capacity
+
+            min_flow = v_ps_prev_m3_h - max_ramp
+            max_flow = v_ps_prev_m3_h + max_ramp
+
+            if v_ps_m3_h < min_flow or v_ps_m3_h > max_flow:
+                ramping_constraint_met = False
+                flow_change = abs(v_ps_m3_h - v_ps_prev_m3_h)
+                violations.append(f"Flow change {flow_change:.2f} m³/h exceeds ramp limit {max_ramp:.2f} m³/h")
+
+        return {
+            # Inputs
+            'v_ps_m3_h': v_ps_m3_h,
+            'H_m': H_m,
+            'v_ps_prev_m3_h': v_ps_prev_m3_h,
+
+            # Output
+            'p_ps_kw': p_ps,
+
+            # Parameters
+            'rho_water': rho_water,
+            'g': g,
+            'eta_ps': eta_ps,
+
+            # Constraints
+            'P_ps_max': P_ps_max,
+            'min_power_kw': min_power,
+            'max_power_kw': max_power,
+            'part_load_constraint_met': part_load_constraint_met,
+
+            'R_ps_max': R_ps_max,
+            'ramping_constraint_met': ramping_constraint_met,
+
+            'all_constraints_met': part_load_constraint_met and ramping_constraint_met,
+            'violations': violations,
+
+            # Utilization
+            'load_fraction': p_ps / P_ps_max if P_ps_max > 0 else 0,
+            'capacity_utilization': p_ps / P_ps_max if P_ps_max > 0 else 0,
+
+            # Formula used
+            'formula': 'p_ps(t) = (ρ_water × g × v_ps(t) × H) / (η_ps × 367)'
         }
 
     def calculate_pumping_energy(self, flow_rate_m3_h: float,

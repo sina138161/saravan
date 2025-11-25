@@ -22,12 +22,19 @@ class CCU(TechnologyBase):
 
     def _define_specs(self) -> Dict:
         """
-        Define CCU system specifications
+        Define CCU/CCS system specifications
 
-        Based on: Commercial CO2 capture systems
+        Based on: Commercial CO2 capture and storage systems
         """
         return {
-            'name': 'Carbon_Capture_Utilization',
+            'name': 'Carbon_Capture_Storage',
+
+            # Exact formula parameters
+            'eta_ccs_co2': 0.90,             # η_ccs,co2: working efficiency of CCS (90%)
+            'p_ccs_N': 50,                   # p_ccs,N(t): stationary energy consumption (kW)
+            'alpha_ccs_E': 0.30,             # α_ccs,E: energy consumption per kg CO2 captured (kWh/kg)
+
+            # Legacy parameters (kept for compatibility)
             'capture_efficiency': 0.90,      # 90% of CO2 captured
             'electricity_kwh_per_kg_co2': 0.30,  # Energy for capture & compression
             'purity': 0.995,                 # 99.5% pure CO2
@@ -38,6 +45,92 @@ class CCU(TechnologyBase):
             'market_price_per_kg': 0.15,     # $/kg CO2 (food grade)
             'co2_content_natural_gas': 0.20, # kg CO2 per kWh thermal input
             'co2_content_biogas': 0.40       # Biogas contains 40% CO2 by volume
+        }
+
+    def calculate_ccs_exact(self, technologies_emissions: Dict[str, Dict]) -> Dict:
+        """
+        Calculate CCS using exact formulas
+
+        Formulas:
+            m_ccs(t) = η_ccs,co2 × Σ(ef_tech × p_tech(t))
+            o_ccs(t) = (1 - η_ccs,co2) × Σ(ef_tech × p_tech(t))
+            p_ccs(t) = p_ccs,N(t) + α_ccs,E × m_ccs(t)
+
+        Args:
+            technologies_emissions: Dictionary with technology emissions
+                Format: {
+                    'tech_name': {
+                        'ef_tech': emission factor (kg CO2/kWh),
+                        'p_tech': output power (kWh)
+                    }, ...
+                }
+
+        Returns:
+            Dictionary with CCS outputs
+        """
+        # Get specs
+        eta_ccs_co2 = self.specs['eta_ccs_co2']
+        p_ccs_N = self.specs['p_ccs_N']
+        alpha_ccs_E = self.specs['alpha_ccs_E']
+
+        # Calculate total emissions: Σ(ef_tech × p_tech(t))
+        total_emissions = 0
+        tech_details = {}
+
+        for tech_name, tech_data in technologies_emissions.items():
+            ef_tech = tech_data.get('ef_tech', 0)
+            p_tech = tech_data.get('p_tech', 0)
+            tech_emission = ef_tech * p_tech
+            total_emissions += tech_emission
+
+            tech_details[tech_name] = {
+                'ef_tech': ef_tech,
+                'p_tech': p_tech,
+                'emissions_kg': tech_emission
+            }
+
+        # Formula 1: CO2 captured by CCS
+        # m_ccs(t) = η_ccs,co2 × Σ(ef_tech × p_tech(t))
+        m_ccs = eta_ccs_co2 * total_emissions
+
+        # Formula 2: CO2 not captured by CCS
+        # o_ccs(t) = (1 - η_ccs,co2) × Σ(ef_tech × p_tech(t))
+        o_ccs = (1 - eta_ccs_co2) * total_emissions
+
+        # Formula 3: Energy consumption of CCS operation
+        # p_ccs(t) = p_ccs,N(t) + α_ccs,E × m_ccs(t)
+        p_ccs = p_ccs_N + alpha_ccs_E * m_ccs
+
+        return {
+            # Inputs
+            'total_emissions_kg': total_emissions,
+            'technologies_count': len(technologies_emissions),
+            'tech_details': tech_details,
+
+            # Outputs from formulas
+            'm_ccs_kg': m_ccs,
+            'm_ccs_ton': m_ccs / 1000,
+            'o_ccs_kg': o_ccs,
+            'o_ccs_ton': o_ccs / 1000,
+            'p_ccs_kwh': p_ccs,
+
+            # Efficiency metrics
+            'eta_ccs_co2': eta_ccs_co2,
+            'capture_rate_pct': (m_ccs / total_emissions * 100) if total_emissions > 0 else 0,
+            'emissions_avoided_kg': m_ccs,
+            'emissions_released_kg': o_ccs,
+
+            # Energy consumption breakdown
+            'p_ccs_N_kwh': p_ccs_N,
+            'p_ccs_variable_kwh': alpha_ccs_E * m_ccs,
+            'alpha_ccs_E': alpha_ccs_E,
+
+            # Formulas used
+            'formulas': {
+                'captured': 'm_ccs(t) = η_ccs,co2 × Σ(ef_tech × p_tech(t))',
+                'not_captured': 'o_ccs(t) = (1 - η_ccs,co2) × Σ(ef_tech × p_tech(t))',
+                'energy': 'p_ccs(t) = p_ccs,N(t) + α_ccs,E × m_ccs(t)'
+            }
         }
 
     def calculate_co2_available(self, fuel_input_kwh: float,

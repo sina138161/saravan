@@ -28,7 +28,12 @@ class Dewatering(TechnologyBase):
         return {
             'name': 'Digestate_Dewatering_Unit',
 
-            # Separation ratios
+            # Exact formula parameters
+            'wastewater_fraction': 0.25,           # v_ad,ww = 0.25 × v_ad,fw
+            'TS_cake': 0.75,                       # Total solids content in cake (75%)
+            'V_d_max': 100,                        # Maximum dewatering capacity (m³/h)
+
+            # Separation ratios (legacy)
             'solids_separation_efficiency': 0.85,  # 85% of solids captured
             'water_recovery_ratio': 0.60,          # 60% recycled to digester
             'wastewater_ratio': 0.25,              # 25% sent to treatment
@@ -58,6 +63,109 @@ class Dewatering(TechnologyBase):
             'capex': 80000,                        # $ (for dewatering equipment)
             'opex_per_m3': 0.10,                   # $/m³ processed
             'lifetime': 15                         # years
+        }
+
+    def calculate_dewatering_outputs_exact(self, m_ad_d_ton_h: float,
+                                           v_ad_fw_m3_h: float,
+                                           TS_digestate: float = 0.08) -> Dict:
+        """
+        Calculate dewatering outputs using exact formulas
+
+        Formulas:
+            v_ad,ww(t) ≈ 0.25 × v_ad,fw(t)
+            v_ad,rw(t) ≈ v_ad,fw(t) - v_ad,ww(t)
+            m_d,solid(t) = m_ad,d(t) × TS_digestate / TS_cake
+
+        Constraints:
+            v_ad,ww(t) ≤ V_d,max
+
+        Args:
+            m_ad_d_ton_h: Digestate mass flow rate from AD (ton/h)
+            v_ad_fw_m3_h: Fresh water consumption in AD (m³/h)
+            TS_digestate: Total solids in digestate (fraction)
+
+        Returns:
+            Dictionary with all outputs and constraint check
+        """
+        # Get specs
+        wastewater_fraction = self.specs['wastewater_fraction']
+        TS_cake = self.specs['TS_cake']
+        V_d_max = self.specs['V_d_max']
+
+        # Formula 1: Wastewater output
+        # v_ad,ww(t) ≈ 0.25 × v_ad,fw(t)
+        v_ad_ww = wastewater_fraction * v_ad_fw_m3_h
+
+        # Formula 2: Recirculation water
+        # v_ad,rw(t) ≈ v_ad,fw(t) - v_ad,ww(t)
+        v_ad_rw = v_ad_fw_m3_h - v_ad_ww
+
+        # Formula 3: Solid cake mass
+        # m_d,solid(t) = m_ad,d(t) × TS_digestate / TS_cake
+        m_d_solid = m_ad_d_ton_h * (TS_digestate / TS_cake)
+
+        # Constraint: Capacity check
+        # v_ad,ww(t) ≤ V_d,max
+        capacity_constraint_met = v_ad_ww <= V_d_max
+
+        # Calculate masses for mass balance
+        # Digestate input mass = m_ad_d (already in ton/h)
+        # Outputs: solid cake + wastewater + recirculation water
+        # Assuming density of 1 ton/m³ for water streams
+        wastewater_mass_ton_h = v_ad_ww  # Assuming 1 ton/m³
+        recirculation_mass_ton_h = v_ad_rw  # Assuming 1 ton/m³
+
+        # Energy requirement (based on wastewater volume)
+        electricity_kwh_h = v_ad_ww * self.specs['electricity_kwh_per_m3']
+
+        # Nutrients in solid cake (assuming same distribution as in original specs)
+        n_content_kg = m_d_solid * 1000 * self.specs['solid_cake_n_content']
+        p_content_kg = m_d_solid * 1000 * self.specs['solid_cake_p_content']
+        k_content_kg = m_d_solid * 1000 * self.specs['solid_cake_k_content']
+
+        return {
+            # Inputs
+            'm_ad_d_ton_h': m_ad_d_ton_h,
+            'v_ad_fw_m3_h': v_ad_fw_m3_h,
+            'TS_digestate': TS_digestate,
+
+            # Outputs from formulas
+            'v_ad_ww_m3_h': v_ad_ww,
+            'v_ad_rw_m3_h': v_ad_rw,
+            'm_d_solid_ton_h': m_d_solid,
+            'm_d_solid_kg_h': m_d_solid * 1000,
+
+            # Output details
+            'wastewater_mass_ton_h': wastewater_mass_ton_h,
+            'recirculation_mass_ton_h': recirculation_mass_ton_h,
+            'solid_cake_TS': TS_cake,
+            'solid_cake_moisture': 1 - TS_cake,
+
+            # Nutrients in solid cake
+            'nitrogen_kg_h': n_content_kg,
+            'phosphorus_kg_h': p_content_kg,
+            'potassium_kg_h': k_content_kg,
+
+            # Constraint
+            'v_d_max': V_d_max,
+            'capacity_constraint_met': capacity_constraint_met,
+            'capacity_utilization': v_ad_ww / V_d_max if V_d_max > 0 else 0,
+
+            # Energy
+            'electricity_kwh_h': electricity_kwh_h,
+
+            # Mass balance check
+            'input_mass_ton_h': m_ad_d_ton_h,
+            'output_mass_ton_h': m_d_solid + wastewater_mass_ton_h + recirculation_mass_ton_h,
+            'mass_balance_difference': abs(m_ad_d_ton_h - (m_d_solid + wastewater_mass_ton_h + recirculation_mass_ton_h)),
+
+            # Formulas used
+            'formulas': {
+                'wastewater': 'v_ad,ww(t) ≈ 0.25 × v_ad,fw(t)',
+                'recirculation': 'v_ad,rw(t) ≈ v_ad,fw(t) - v_ad,ww(t)',
+                'solid': 'm_d,solid(t) = m_ad,d(t) × TS_digestate / TS_cake',
+                'capacity': 'v_ad,ww(t) ≤ V_d,max'
+            }
         }
 
     def calculate_dewatering_outputs(self, digestate_input_m3: float,
