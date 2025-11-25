@@ -2,7 +2,6 @@
 Economic calculation utilities for all technologies
 """
 
-import numpy as np
 from typing import Dict, List, Tuple
 
 
