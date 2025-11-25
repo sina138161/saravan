@@ -45,15 +45,30 @@ class GasBoiler(TechnologyBase):
         """
         Calculate heat output for given fuel input
 
+        Formula:
+            p_gb(t) = η_gb × q_gb(t) × LHV_ch4
+
+        Where:
+            p_gb(t): Output heating power of GB (kWh)
+            q_gb(t): Amount of NG consumed by GB (m³)
+            η_gb: Operating efficiency of the GB
+            LHV_ch4: Lower heating value of fuel (kWh/m³)
+
         Args:
-            fuel_input_kwh: Fuel energy input (kWh thermal)
+            fuel_input_kwh: Fuel energy input (kWh thermal) = q_gb(t) × LHV_ch4
             fuel_type: 'natural_gas' or 'biogas'
 
         Returns:
             Dictionary with heat output and emissions
         """
-        # Calculate heat output
-        heat_output = fuel_input_kwh * self.specs['thermal_efficiency']
+        # Get boiler efficiency η_gb
+        eta_gb = self.specs['thermal_efficiency']
+
+        # Calculate heat output using exact formula
+        # p_gb(t) = η_gb × q_gb(t) × LHV_ch4
+        # where fuel_input_kwh = q_gb(t) × LHV_ch4
+        p_gb = eta_gb * fuel_input_kwh
+        heat_output = p_gb
 
         # Calculate emissions
         if fuel_type == 'natural_gas':
@@ -64,7 +79,10 @@ class GasBoiler(TechnologyBase):
             co2_emissions = 0
 
         return {
+            'p_gb_kwh': p_gb,
             'heat_kwh': heat_output,
+            'eta_gb': eta_gb,
+            'fuel_input_kwh': fuel_input_kwh,
             'co2_emissions_kg': co2_emissions,
             'efficiency': heat_output / fuel_input_kwh if fuel_input_kwh > 0 else 0
         }
@@ -74,15 +92,23 @@ class GasBoiler(TechnologyBase):
         """
         Calculate fuel requirement for desired heat output
 
+        From formula: p_gb(t) = η_gb × q_gb(t) × LHV_ch4
+        Solve for q_gb(t): q_gb(t) = p_gb(t) / (η_gb × LHV_ch4)
+
         Args:
-            heat_demand_kwh: Desired heat output (kWh)
+            heat_demand_kwh: Desired heat output (kWh) = p_gb(t)
             fuel_type: 'natural_gas' or 'biogas'
 
         Returns:
             Dictionary with fuel requirements
         """
+        # Get boiler efficiency η_gb
+        eta_gb = self.specs['thermal_efficiency']
+
         # Calculate required fuel input
-        fuel_input_kwh = heat_demand_kwh / self.specs['thermal_efficiency']
+        # From p_gb(t) = η_gb × q_gb(t) × LHV_ch4
+        # fuel_input_kwh = q_gb(t) × LHV_ch4 = p_gb(t) / η_gb
+        fuel_input_kwh = heat_demand_kwh / eta_gb
 
         # Convert to fuel volume
         if fuel_type == 'natural_gas':
