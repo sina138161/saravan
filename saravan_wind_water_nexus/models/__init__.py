@@ -3,7 +3,7 @@ Technology models for Saravan Wind-Water Nexus
 
 Organized by technology type:
 - base: Base classes for all technologies
-- wind: Wind turbine models (HAWT, VAWT, Bladeless)
+- wind: Wind turbine models (HAWT, Bladeless)
 - thermal: Thermal systems (Microturbine, Heat Recovery, Gas Boiler)
 - biogas: Biogas and sludge management (Composting, Digester, Dewatering, CCU)
 - water: Water systems (Wells, Treatment, Storage)
@@ -14,7 +14,7 @@ Organized by technology type:
 from .base import TechnologyBase, EconomicCalculator
 
 # Wind turbines
-from .wind import HAWT, VAWT, Bladeless
+from .wind import HAWT, Bladeless
 
 # Thermal systems
 from .thermal import GasMicroturbine, HeatRecovery, GasBoiler
@@ -35,7 +35,6 @@ __all__ = [
 
     # Wind
     'HAWT',
-    'VAWT',
     'Bladeless',
 
     # Thermal

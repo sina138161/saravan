@@ -44,28 +44,19 @@ class HAWT(TechnologyBase):
         }
 
     def calculate_power_output(self, wind_speed: float,
-                               dust_concentration: float = 0,
-                               temperature: float = 25) -> float:
+                               dust_concentration: float = 0) -> float:
         """
         Calculate power output for given conditions
 
         Args:
-            wind_speed: Wind speed in m/s
+            wind_speed: Wind speed in m/s (v(t))
             dust_concentration: PM10 concentration in μg/m³
-            temperature: Air temperature in °C
 
         Returns:
-            Power output in kW
+            Power output in kW (p_wt(t))
         """
-        # Check cut-in and cut-out speeds
-        if wind_speed < self.specs['cut_in_speed'] or wind_speed > self.specs['cut_out_speed']:
-            return 0.0
-
-        # Air density correction for temperature
-        rho = 1.225 * (288.15 / (temperature + 273.15))  # kg/m³
-
-        # Calculate base power using HAWT power curve
-        power_base = self._hawt_power_curve(wind_speed, rho)
+        # Calculate base power using HAWT power curve with constraints
+        power_base = self._hawt_power_curve(wind_speed)
 
         # Apply dust impact
         dust_reduction = self._dust_impact_model(wind_speed, dust_concentration)
@@ -73,34 +64,41 @@ class HAWT(TechnologyBase):
         # Apply availability
         power_actual = power_base * dust_reduction * self.specs['availability']
 
-        return min(power_actual, self.specs['capacity'])
+        return power_actual
 
-    def _hawt_power_curve(self, v: float, rho: float) -> float:
+    def _hawt_power_curve(self, v: float) -> float:
         """
-        HAWT power curve - cubic relationship between cut-in and rated
+        HAWT power curve with exact cubic formula and constraints
 
-        Reference: IEC 61400-12 standard
+        Formula (Eq. 19):
+                 ⎧  0                                      if v < v_in  OR  v > v_out
+        p_wt(t) =⎨  [(v³ - v_in³) / (v_r³ - v_in³)] × P_wt  if v_in ≤ v ≤ v_r
+                 ⎩  P_wt                                   if v_r ≤ v < v_out
 
         Args:
-            v: Wind speed (m/s)
-            rho: Air density (kg/m³)
+            v: Real-time wind speed v(t) in m/s
 
         Returns:
-            Power output (kW)
+            Power output p_wt(t) in kW
         """
-        v_cut_in = self.specs['cut_in_speed']
-        v_rated = self.specs['rated_speed']
-        P_rated = self.specs['capacity']
+        v_in = self.specs['cut_in_speed']      # v_in: cut-in wind speed
+        v_r = self.specs['rated_speed']        # v_r: rated wind speed
+        v_out = self.specs['cut_out_speed']    # v_out: cut-out wind speed
+        P_wt = self.specs['capacity']          # P_wt: rated output power
 
-        if v <= v_cut_in:
-            return 0
-        elif v < v_rated:
-            # Cubic interpolation
-            power = P_rated * ((v - v_cut_in) / (v_rated - v_cut_in)) ** 3
-        else:
-            power = P_rated
+        # Constraint 1: Outside operating range
+        if v < v_in or v > v_out:
+            return 0.0
 
-        return power
+        # Constraint 2: Between cut-in and rated (cubic region)
+        elif v_in <= v <= v_r:
+            # Exact cubic formula: [(v³ - v_in³) / (v_r³ - v_in³)] × P_wt
+            power = P_wt * ((v**3 - v_in**3) / (v_r**3 - v_in**3))
+            return power
+
+        # Constraint 3: Between rated and cut-out (rated power)
+        else:  # v_r <= v < v_out
+            return P_wt
 
     def _dust_impact_model(self, wind_speed: float, dust_concentration: float) -> float:
         """
@@ -138,27 +136,23 @@ class HAWT(TechnologyBase):
         return max(0.5, min(1.0, reduction))  # Limit between 50% and 100%
 
     def calculate_annual_energy(self, wind_speed_series: np.ndarray,
-                                dust_series: np.ndarray = None,
-                                temperature_series: np.ndarray = None) -> Dict:
+                                dust_series: np.ndarray = None) -> Dict:
         """
         Calculate annual energy production
 
         Args:
             wind_speed_series: Hourly wind speeds for full year (8760 values)
             dust_series: Hourly PM10 concentrations (optional)
-            temperature_series: Hourly temperatures (optional)
 
         Returns:
             Dictionary with energy statistics
         """
         if dust_series is None:
             dust_series = np.zeros_like(wind_speed_series)
-        if temperature_series is None:
-            temperature_series = np.ones_like(wind_speed_series) * 25
 
         hourly_power = np.array([
-            self.calculate_power_output(v, d, t)
-            for v, d, t in zip(wind_speed_series, dust_series, temperature_series)
+            self.calculate_power_output(v, d)
+            for v, d in zip(wind_speed_series, dust_series)
         ])
 
         # Annual statistics
