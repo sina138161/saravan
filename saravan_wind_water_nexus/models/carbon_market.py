@@ -1,12 +1,11 @@
 """
 Three-Tier Carbon Market Model for Wind-Water Energy Projects
 Based on: Nature Scientific Reports 2025 framework
-https://doi.org/10.1038/s41598-025-21623-0
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Tuple, List
+from typing import Dict, List
 from dataclasses import dataclass
 
 
@@ -21,16 +20,18 @@ class CarbonMarketTier:
     social_multiplier: float  # Bonus for social benefits
 
 
-class CarbonMarketModel:
+class CarbonMarket:
     """
-    Three-tier carbon market model integrating:
-    - Tier 1: Voluntary Carbon Credits (VCC)
-    - Tier 2: Compliance Carbon Credits (CCC)
-    - Tier 3: Premium Green Credits (PGC)
+    Three-Tier Carbon Market Model
+
+    Tiers:
+    - VCC: Voluntary Carbon Credits
+    - CCC: Compliance Carbon Credits
+    - PGC: Premium Green Credits (with co-benefits)
     """
 
     def __init__(self):
-        """Initialize carbon market tiers"""
+        """Initialize carbon market tiers and baseline emissions"""
         self.tiers = self._define_market_tiers()
         self.baseline_emissions = self._define_baseline_emissions()
 
@@ -40,33 +41,32 @@ class CarbonMarketModel:
 
         Based on current global carbon market prices (2024-2025)
         """
-
         tiers = {
             'VCC': CarbonMarketTier(
                 name='Voluntary Carbon Credits',
-                price_per_ton=15.0,  # $/tCO2 (voluntary market average)
-                transaction_cost=0.05,  # 5% (brokerage + platform fees)
+                price_per_ton=15.0,  # $/tCO2
+                transaction_cost=0.05,  # 5%
                 eligibility_criteria='Any verified emission reduction',
-                verification_cost=5000,  # $/year (third-party verification)
-                social_multiplier=1.0  # No bonus
+                verification_cost=5000,  # $/year
+                social_multiplier=1.0
             ),
 
             'CCC': CarbonMarketTier(
                 name='Compliance Carbon Credits',
                 price_per_ton=35.0,  # $/tCO2 (EU ETS equivalent)
-                transaction_cost=0.10,  # 10% (higher regulatory costs)
+                transaction_cost=0.10,  # 10%
                 eligibility_criteria='Certified Emission Reductions (CER)',
-                verification_cost=15000,  # $/year (rigorous verification)
-                social_multiplier=1.0  # No bonus
+                verification_cost=15000,  # $/year
+                social_multiplier=1.0
             ),
 
             'PGC': CarbonMarketTier(
                 name='Premium Green Credits',
-                price_per_ton=50.0,  # $/tCO2 (premium market for co-benefits)
-                transaction_cost=0.08,  # 8% (specialized platform)
+                price_per_ton=50.0,  # $/tCO2
+                transaction_cost=0.08,  # 8%
                 eligibility_criteria='Renewable energy + water/social benefits',
-                verification_cost=12000,  # $/year (sustainability certification)
-                social_multiplier=1.3  # 30% bonus for water access improvement
+                verification_cost=12000,  # $/year
+                social_multiplier=1.3  # 30% bonus for co-benefits
             )
         }
 
@@ -78,17 +78,16 @@ class CarbonMarketModel:
 
         Reference: IPCC 2023 emission factors
         """
-
         baseline = {
-            'grid_electricity_iran': 0.550,  # kgCO2/kWh (Iran grid mix)
+            'grid_electricity_iran': 0.550,  # kgCO2/kWh
             'diesel_generator': 0.650,  # kgCO2/kWh
-            'diesel_water_pump': 0.750,  # kgCO2/kWh (less efficient)
+            'diesel_water_pump': 0.750,  # kgCO2/kWh
             'natural_gas': 0.400,  # kgCO2/kWh
             'coal': 0.900,  # kgCO2/kWh
 
             # Life-cycle emissions for renewables
-            'wind_turbine_lifecycle': 0.011,  # kgCO2/kWh (manufacturing + O&M)
-            'battery_lifecycle': 0.015,  # kgCO2/kWh (Li-ion batteries)
+            'wind_turbine_lifecycle': 0.011,  # kgCO2/kWh
+            'battery_lifecycle': 0.015,  # kgCO2/kWh
             'solar_pv_lifecycle': 0.045,  # kgCO2/kWh
         }
 
@@ -108,12 +107,11 @@ class CarbonMarketModel:
         Returns:
             Annual CO2 avoided in metric tons
         """
-
         # Baseline emissions
         baseline_factor = self.baseline_emissions[displaced_source]
         baseline_emissions = annual_energy_kwh * baseline_factor / 1000  # tons CO2
 
-        # Wind turbine lifecycle emissions
+        # Lifecycle emissions
         if include_lifecycle:
             lifecycle_factor = self.baseline_emissions['wind_turbine_lifecycle']
             lifecycle_emissions = annual_energy_kwh * lifecycle_factor / 1000  # tons CO2
@@ -137,14 +135,11 @@ class CarbonMarketModel:
         Returns:
             Additional CO2 avoided (tons)
         """
-
-        # Typical energy for water pumping: 0.5-1.5 kWh/m³ depending on depth
-        # Saravan average well depth ~100m, assume 1.0 kWh/m³
+        # Energy for water pumping (assume 1.0 kWh/m³)
         energy_per_m3 = 1.0  # kWh/m³
-
         total_energy = annual_water_m3 * energy_per_m3
 
-        # Avoided emissions from using wind instead of diesel for pumping
+        # Avoided emissions
         co2_avoided = self.calculate_avoided_emissions(
             total_energy,
             displaced_source=traditional_pumping
@@ -164,9 +159,8 @@ class CarbonMarketModel:
             water_access_improvement: Whether project improves water access
 
         Returns:
-            Dictionary with revenue breakdown
+            Revenue breakdown dictionary
         """
-
         tier = self.tiers[tier_name]
 
         # Base price
@@ -184,7 +178,7 @@ class CarbonMarketModel:
         # Transaction costs
         transaction_cost = gross_revenue * tier.transaction_cost
 
-        # Annual verification cost
+        # Verification cost
         verification_cost = tier.verification_cost
 
         # Net revenue
@@ -204,20 +198,17 @@ class CarbonMarketModel:
         }
 
     def optimize_tier_selection(self, co2_avoided_tons: float,
-                                water_access_improvement: bool = False,
-                                project_location: str = 'iran') -> Dict:
+                                water_access_improvement: bool = False) -> Dict:
         """
         Select optimal carbon market tier based on maximum revenue
 
         Args:
             co2_avoided_tons: Annual CO2 avoided (tons)
             water_access_improvement: Water access co-benefit
-            project_location: Location for eligibility
 
         Returns:
             Optimal tier selection and comparison
         """
-
         # Calculate revenue for each tier
         tier_results = {}
 
@@ -232,6 +223,7 @@ class CarbonMarketModel:
         optimal_tier = max(tier_results.items(),
                           key=lambda x: x[1]['net_revenue'])
 
+        # Comparison table
         comparison = pd.DataFrame([
             {
                 'Tier': r['tier'],
@@ -249,50 +241,8 @@ class CarbonMarketModel:
             'optimal_tier': optimal_tier[0],
             'optimal_tier_data': optimal_tier[1],
             'comparison_table': comparison,
-            'recommendation': self._generate_recommendation(optimal_tier[0], tier_results)
+            'all_tier_results': tier_results
         }
-
-    def _generate_recommendation(self, optimal_tier: str,
-                                 tier_results: Dict) -> str:
-        """Generate recommendation text"""
-
-        optimal_data = tier_results[optimal_tier]
-
-        recommendation = f"""
-CARBON MARKET TIER RECOMMENDATION:
-{'='*70}
-
-Optimal Tier: {optimal_tier} - {optimal_data['tier_name']}
-
-Annual Net Revenue: ${optimal_data['net_revenue']:,.2f}
-Effective Price: ${optimal_data['net_price_per_ton']:.2f}/tCO2
-
-Rationale:
-"""
-
-        if optimal_tier == 'VCC':
-            recommendation += """
-- Easiest to access (low barrier to entry)
-- Lower verification costs
-- Suitable for small-scale projects
-- Fast time-to-market for carbon credits
-"""
-        elif optimal_tier == 'CCC':
-            recommendation += """
-- Higher carbon price compensates for higher costs
-- Regulatory compliance benefits
-- Suitable for medium-large scale projects
-- More stable long-term pricing
-"""
-        else:  # PGC
-            recommendation += """
-- Highest revenue due to social co-benefits premium
-- Water access improvement recognized
-- Premium market values sustainability
-- Best for integrated water-energy projects
-"""
-
-        return recommendation
 
     def calculate_20year_carbon_revenue(self, annual_co2_avoided: float,
                                        tier: str,
@@ -305,12 +255,11 @@ Rationale:
             annual_co2_avoided: Annual CO2 avoided (tons/year)
             tier: Carbon market tier
             water_benefit: Water access improvement
-            price_escalation: Annual price increase (3% default)
+            price_escalation: Annual price increase (default 3%)
 
         Returns:
             20-year revenue projection
         """
-
         years = 20
         annual_revenues = []
 
@@ -318,9 +267,10 @@ Rationale:
             # Escalate price
             escalated_price = self.tiers[tier].price_per_ton * ((1 + price_escalation) ** year)
 
-            # Temporary tier with escalated price
-            temp_tier = self.tiers[tier]
-            original_price = temp_tier.price_per_ton
+            # Store original price
+            original_price = self.tiers[tier].price_per_ton
+
+            # Update price temporarily
             self.tiers[tier].price_per_ton = escalated_price
 
             # Calculate revenue
@@ -353,72 +303,66 @@ Rationale:
         }
 
     def get_emission_factor(self, source: str) -> float:
-        """Get emission factor for a source"""
+        """
+        Get emission factor for a source
+
+        Args:
+            source: Energy source name
+
+        Returns:
+            Emission factor (kgCO2/kWh)
+        """
         return self.baseline_emissions.get(source, 0)
 
+    def calculate_project_carbon_revenue(self, annual_energy_kwh: float,
+                                         annual_water_m3: float,
+                                         displaced_energy_source: str = 'diesel_generator',
+                                         water_benefit: bool = True) -> Dict:
+        """
+        Calculate complete carbon revenue for project
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Initialize carbon market model
-    carbon_market = CarbonMarketModel()
+        Args:
+            annual_energy_kwh: Annual energy production
+            annual_water_m3: Annual water pumped
+            displaced_energy_source: Energy source being displaced
+            water_benefit: Whether project improves water access
 
-    print("="*80)
-    print("THREE-TIER CARBON MARKET MODEL")
-    print("="*80)
+        Returns:
+            Complete carbon revenue analysis
+        """
+        # Calculate emissions avoided
+        co2_energy = self.calculate_avoided_emissions(
+            annual_energy_kwh,
+            displaced_energy_source
+        )
 
-    # Example: 5000 MWh annual production
-    annual_energy = 5_000_000  # kWh (5 GWh)
-    annual_water = 500_000  # m³
+        co2_water = self.calculate_water_carbon_benefit(
+            annual_water_m3,
+            'diesel_water_pump'
+        )
 
-    # Calculate avoided emissions
-    co2_energy = carbon_market.calculate_avoided_emissions(
-        annual_energy,
-        'diesel_generator'
-    )
+        total_co2 = co2_energy + co2_water
 
-    co2_water = carbon_market.calculate_water_carbon_benefit(
-        annual_water,
-        'diesel_water_pump'
-    )
+        # Optimize tier selection
+        optimization = self.optimize_tier_selection(
+            total_co2,
+            water_access_improvement=water_benefit
+        )
 
-    total_co2 = co2_energy + co2_water
+        # 20-year projection
+        projection = self.calculate_20year_carbon_revenue(
+            total_co2,
+            optimization['optimal_tier'],
+            water_benefit=water_benefit,
+            price_escalation=0.03
+        )
 
-    print(f"\nANNUAL EMISSIONS AVOIDED:")
-    print(f"  From energy: {co2_energy:,.0f} tons CO2")
-    print(f"  From water:  {co2_water:,.0f} tons CO2")
-    print(f"  TOTAL:       {total_co2:,.0f} tons CO2")
-
-    # Optimize tier selection
-    print("\n" + "="*80)
-    print("CARBON MARKET TIER OPTIMIZATION")
-    print("="*80)
-
-    optimization = carbon_market.optimize_tier_selection(
-        total_co2,
-        water_access_improvement=True
-    )
-
-    print(f"\nOptimal Tier: {optimization['optimal_tier']}")
-    print(f"\nCOMPARISON TABLE:")
-    print(optimization['comparison_table'].to_string(index=False))
-
-    print(optimization['recommendation'])
-
-    # 20-year projection
-    print("\n" + "="*80)
-    print("20-YEAR CARBON REVENUE PROJECTION")
-    print("="*80)
-
-    projection = carbon_market.calculate_20year_carbon_revenue(
-        total_co2,
-        optimization['optimal_tier'],
-        water_benefit=True,
-        price_escalation=0.03
-    )
-
-    print(f"\nTotal Nominal Revenue (20 years): ${projection['total_nominal']:,.0f}")
-    print(f"NPV at 8%: ${projection['npv_at_8pct']:,.0f}")
-    print(f"Average Annual Revenue: ${projection['average_annual']:,.0f}")
-
-    print("\nFirst 5 years:")
-    print(projection['annual_revenues_df'].head().to_string(index=False))
+        return {
+            'co2_energy_tons': co2_energy,
+            'co2_water_tons': co2_water,
+            'total_co2_tons': total_co2,
+            'optimization': optimization,
+            'projection_20year': projection,
+            'annual_revenue': optimization['optimal_tier_data']['net_revenue'],
+            'optimal_tier': optimization['optimal_tier']
+        }
