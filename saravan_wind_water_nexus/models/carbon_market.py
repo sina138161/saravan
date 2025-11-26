@@ -3,10 +3,16 @@ Three-Tier Carbon Market Model for Wind-Water Energy Projects
 Based on: Nature Scientific Reports 2025 framework
 """
 
-import numpy as np
-import pandas as pd
 from typing import Dict, List
 from dataclasses import dataclass
+
+# Optional pandas import for enhanced dataframe functionality
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+    pd = None  # Set to None if not available
 
 
 @dataclass
@@ -224,7 +230,7 @@ class CarbonMarket:
                           key=lambda x: x[1]['net_revenue'])
 
         # Comparison table
-        comparison = pd.DataFrame([
+        comparison_data = [
             {
                 'Tier': r['tier'],
                 'Tier_Name': r['tier_name'],
@@ -235,7 +241,10 @@ class CarbonMarket:
                 'Effective_Price_per_ton': r['net_price_per_ton']
             }
             for r in tier_results.values()
-        ])
+        ]
+
+        # Use pandas DataFrame if available, otherwise return list of dicts
+        comparison = pd.DataFrame(comparison_data) if HAS_PANDAS else comparison_data
 
         return {
             'optimal_tier': optimal_tier[0],
@@ -285,21 +294,35 @@ class CarbonMarket:
                 'net_revenue': revenue['net_revenue']
             })
 
-        df_revenues = pd.DataFrame(annual_revenues)
+        # Use pandas DataFrame if available, otherwise use list of dicts
+        df_revenues = pd.DataFrame(annual_revenues) if HAS_PANDAS else annual_revenues
 
         # Calculate NPV
         discount_rate = 0.08  # 8% discount rate
-        npv = sum(
-            row['net_revenue'] / ((1 + discount_rate) ** (row['year'] - 1))
-            for _, row in df_revenues.iterrows()
-        )
+        if HAS_PANDAS:
+            npv = sum(
+                row['net_revenue'] / ((1 + discount_rate) ** (row['year'] - 1))
+                for _, row in df_revenues.iterrows()
+            )
+            total_nominal = df_revenues['net_revenue'].sum()
+            average_annual = df_revenues['net_revenue'].mean()
+            final_year_revenue = df_revenues.iloc[-1]['net_revenue']
+        else:
+            npv = sum(
+                row['net_revenue'] / ((1 + discount_rate) ** (row['year'] - 1))
+                for row in annual_revenues
+            )
+            revenues_only = [row['net_revenue'] for row in annual_revenues]
+            total_nominal = sum(revenues_only)
+            average_annual = total_nominal / len(revenues_only) if revenues_only else 0
+            final_year_revenue = annual_revenues[-1]['net_revenue'] if annual_revenues else 0
 
         return {
             'annual_revenues_df': df_revenues,
-            'total_nominal': df_revenues['net_revenue'].sum(),
+            'total_nominal': total_nominal,
             'npv_at_8pct': npv,
-            'average_annual': df_revenues['net_revenue'].mean(),
-            'final_year_revenue': df_revenues.iloc[-1]['net_revenue']
+            'average_annual': average_annual,
+            'final_year_revenue': final_year_revenue
         }
 
     def get_emission_factor(self, source: str) -> float:
@@ -366,3 +389,7 @@ class CarbonMarket:
             'annual_revenue': optimization['optimal_tier_data']['net_revenue'],
             'optimal_tier': optimization['optimal_tier']
         }
+
+
+# Backward compatibility alias
+CarbonMarketModel = CarbonMarket
