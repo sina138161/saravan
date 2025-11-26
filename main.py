@@ -125,13 +125,13 @@ def initialize_all_technologies():
     # Thermal systems
     print("\n2. Thermal Energy Systems")
     technologies['gas_microturbine'] = GasMicroturbine()
-    print(f"   ✓ Gas Microturbine: {technologies['gas_microturbine'].specs['capacity']} kW")
+    print(f"   ✓ Gas Microturbine: {technologies['gas_microturbine'].specs['rated_capacity_kw']} kW")
 
     technologies['heat_recovery'] = HeatRecovery()
     print(f"   ✓ Heat Recovery: η = {technologies['heat_recovery'].specs['recovery_efficiency']}")
 
     technologies['gas_boiler'] = GasBoiler()
-    print(f"   ✓ Gas Boiler: {technologies['gas_boiler'].specs['capacity']} kW")
+    print(f"   ✓ Gas Boiler: η_thermal = {technologies['gas_boiler'].specs['thermal_efficiency']}")
 
     # Biogas systems
     print("\n3. Biogas and Biomass Systems")
@@ -152,7 +152,9 @@ def initialize_all_technologies():
     print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_depth_m']} m")
 
     technologies['elevated_storage'] = ElevatedStorage()
-    print(f"   ✓ Elevated Storage: {technologies['elevated_storage'].specs['capacity_m3']} m³")
+    # Get the actual capacity from the tank specs (depends on tank type)
+    tank_spec = technologies['elevated_storage'].specs['tank_types']['medium']
+    print(f"   ✓ Elevated Storage: {tank_spec['capacity']} m³")
 
     # Energy storage
     print("\n6. Energy Storage Systems")
