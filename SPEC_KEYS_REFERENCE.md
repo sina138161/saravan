@@ -175,3 +175,32 @@ print(list(gt.specs.keys()))
 
 **Last Updated:** 2025-11-26  
 **All keys verified and tested**
+
+---
+
+## Carbon Market
+
+### CarbonMarket / CarbonMarketModel
+```python
+# Method signatures (NOT specs)
+calculate_tier_revenue(
+    co2_avoided_tons,
+    tier_name='PGC',          # NOT 'tier' - must be 'tier_name'
+    water_access_improvement=True
+)
+
+# Available tier names:
+# - 'VCC': Voluntary Carbon Credits
+# - 'CCC': Compliance Carbon Credits  
+# - 'PGC': Premium Green Credits
+```
+
+### Common Carbon Market Mistakes
+
+❌ **WRONG** → ✅ **CORRECT**
+- `tier='PGC'` → `tier_name='PGC'`
+
+---
+
+**Last Updated:** 2025-11-26 (Final)
+**All keys and method signatures verified**
