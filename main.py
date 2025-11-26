@@ -314,7 +314,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Biogas",
         bus1="Heat",
         p_nom=100,
-        efficiency=technologies['gas_boiler'].specs['efficiency_thermal'],
+        efficiency=technologies['gas_boiler'].specs['thermal_efficiency'],
     )
     print("   ✓ Biogas production and conversion")
 
@@ -508,13 +508,13 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
         gt_model = technologies['gas_microturbine']
 
         # Calculate fuel consumption using exact formula
-        fuel_consumed = gt_gen / gt_model.specs['efficiency_electrical']
+        fuel_consumed = gt_gen / gt_model.specs['electrical_efficiency']
 
         results['Gas_Microturbine'] = {
             'type': 'thermal',
             'generation_kwh': gt_gen,
             'fuel_consumed_kwh': fuel_consumed,
-            'efficiency': gt_model.specs['efficiency_electrical'],
+            'efficiency': gt_model.specs['electrical_efficiency'],
             'co2_kg': fuel_consumed * 0.20,  # emission factor
         }
         print(f"   Generation: {gt_gen:,.0f} kWh")
@@ -599,7 +599,7 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
         pumping_energy = network.links_t.p0['Water_Pump'].sum()
 
         # Calculate water pumped using exact formula (inverse)
-        water_pumped_m3 = pumping_energy * well_model.specs['pump_efficiency'] / config.PUMPING_POWER_PER_M3
+        water_pumped_m3 = pumping_energy * well_model.specs['pump_specs']['efficiency'] / config.PUMPING_POWER_PER_M3
 
         results['Water_System'] = {
             'type': 'water',
