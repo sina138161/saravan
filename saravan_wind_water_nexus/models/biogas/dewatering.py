@@ -61,6 +61,7 @@ class Dewatering(TechnologyBase):
             'polymer_consumption_kg_per_ton': 2.5, # Polymer for flocculation
             'polymer_price_per_kg': 3.0,           # $/kg
             'capex': 80000,                        # $ (for dewatering equipment)
+            'opex': 0.10,                          # $/m³ processed (annual O&M)
             'opex_per_m3': 0.10,                   # $/m³ processed
             'lifetime': 15                         # years
         }
