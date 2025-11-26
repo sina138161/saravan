@@ -39,7 +39,7 @@ from models.storage.battery_ess import BatteryESS
 from models.storage.thermal_storage import ThermalStorage
 
 # Import data generation and plotting
-from data.generate_synthetic_data import generate_synthetic_data
+from data import SaravanDataGenerator
 from plotting.nexus_plots import NexusVisualizer
 from plotting.carbon_plots import CarbonEmissionsVisualizer
 from plotting.publication_figures import PublicationVisualizer
@@ -125,13 +125,13 @@ def initialize_all_technologies():
     # Thermal systems
     print("\n2. Thermal Energy Systems")
     technologies['gas_microturbine'] = GasMicroturbine()
-    print(f"   ✓ Gas Microturbine: {technologies['gas_microturbine'].specs['capacity']} kW")
+    print(f"   ✓ Gas Microturbine: {technologies['gas_microturbine'].specs['rated_capacity_kw']} kW")
 
     technologies['heat_recovery'] = HeatRecovery()
     print(f"   ✓ Heat Recovery: η = {technologies['heat_recovery'].specs['recovery_efficiency']}")
 
     technologies['gas_boiler'] = GasBoiler()
-    print(f"   ✓ Gas Boiler: {technologies['gas_boiler'].specs['capacity']} kW")
+    print(f"   ✓ Gas Boiler: η_thermal = {technologies['gas_boiler'].specs['thermal_efficiency']}")
 
     # Biogas systems
     print("\n3. Biogas and Biomass Systems")
@@ -152,7 +152,9 @@ def initialize_all_technologies():
     print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_depth_m']} m")
 
     technologies['elevated_storage'] = ElevatedStorage()
-    print(f"   ✓ Elevated Storage: {technologies['elevated_storage'].specs['capacity_m3']} m³")
+    # Get the actual capacity from the tank specs (depends on tank type)
+    tank_spec = technologies['elevated_storage'].specs['tank_types']['medium']
+    print(f"   ✓ Elevated Storage: {tank_spec['capacity']} m³")
 
     # Energy storage
     print("\n6. Energy Storage Systems")
@@ -387,7 +389,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
     print("\n7. Adding Demand Profiles")
 
     # Electricity demand
-    elec_demand = dataset['electricity_demand']['total_kw'].values[:snapshots]
+    elec_demand = dataset['electricity_demand']['total_kwh'].values[:snapshots]
     network.add(
         "Load",
         "Electricity_Demand",
@@ -397,7 +399,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
     print(f"   ✓ Electricity: avg {elec_demand.mean():.1f} kW")
 
     # Heat demand
-    heat_demand = dataset['heat_demand']['total_kw'].values[:snapshots]
+    heat_demand = dataset['heat_demand']['total_kwh_thermal'].values[:snapshots]
     network.add(
         "Load",
         "Heat_Demand",
@@ -1019,13 +1021,11 @@ def main():
     print("\n" + "="*80)
     print("GENERATING TIME SERIES DATA")
     print("="*80)
-    print(f"\nGenerating {snapshots} hours of data...")
 
-    dataset = generate_synthetic_data(
-        start_date=start_date,
-        snapshots=snapshots,
-        freq=frequency,
-        random_seed=config.RANDOM_SEED
+    data_generator = SaravanDataGenerator(random_seed=config.RANDOM_SEED)
+    dataset = data_generator.generate_complete_dataset(
+        hours=snapshots,
+        start_date=start_date
     )
     print(f"✓ Generated data for {snapshots} hours")
 
