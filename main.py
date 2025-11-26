@@ -267,9 +267,9 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         "Generator",
         "Gas_Microturbine",
         bus="Electricity",
-        p_nom=gt_model.specs['capacity'],
-        efficiency=gt_model.specs['efficiency_electrical'],
-        marginal_cost=config.NATURAL_GAS_PRICE / gt_model.specs['efficiency_electrical'],
+        p_nom=gt_model.specs['rated_capacity_kw'],
+        efficiency=gt_model.specs['electrical_efficiency'],
+        marginal_cost=config.NATURAL_GAS_PRICE / gt_model.specs['electrical_efficiency'],
         capital_cost=gt_model.specs['capex'],
     )
 
@@ -279,7 +279,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         "Heat_Recovery_WHB",
         bus0="Electricity",
         bus1="Heat",
-        p_nom=gt_model.specs['capacity'],
+        p_nom=gt_model.specs['rated_capacity_kw'],
         efficiency=technologies['heat_recovery'].specs['recovery_efficiency'],
     )
     print("   ✓ Gas Microturbine + WHB heat recovery")
@@ -366,7 +366,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Electricity",
         bus1="Electricity",  # Dummy for now
         p_nom=config.GROUNDWATER_MAX_EXTRACTION * config.PUMPING_POWER_PER_M3,
-        efficiency=well_model.specs['pump_efficiency'],
+        efficiency=well_model.specs['pump_specs']['efficiency'],
         marginal_cost=0,
         capital_cost=well_model.specs['capex'],
     )
