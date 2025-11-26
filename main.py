@@ -136,10 +136,10 @@ def initialize_all_technologies():
     # Biogas systems
     print("\n3. Biogas and Biomass Systems")
     technologies['anaerobic_digester'] = AnaerobicDigester()
-    print(f"   ✓ Anaerobic Digester: {technologies['anaerobic_digester'].specs['capacity_m3']} m³")
+    print(f"   ✓ Anaerobic Digester: {technologies['anaerobic_digester'].specs['V_digester']} m³")
 
     technologies['dewatering'] = Dewatering()
-    print(f"   ✓ Dewatering: η = {technologies['dewatering'].specs['efficiency']}")
+    print(f"   ✓ Dewatering: max capacity = {technologies['dewatering'].specs['V_d_max']} m³/h")
 
     # Carbon systems
     print("\n4. Carbon Capture and Utilization")
@@ -149,12 +149,10 @@ def initialize_all_technologies():
     # Water systems
     print("\n5. Water Management Systems")
     technologies['groundwater_well'] = GroundwaterWell()
-    print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_depth_m']} m")
+    print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_specs']['depth']} m")
 
     technologies['elevated_storage'] = ElevatedStorage()
-    # Get the actual capacity from the tank specs (depends on tank type)
-    tank_spec = technologies['elevated_storage'].specs['tank_types']['medium']
-    print(f"   ✓ Elevated Storage: {tank_spec['capacity']} m³")
+    print(f"   ✓ Elevated Storage: {technologies['elevated_storage'].specs['V_awt_max']} m³")
 
     # Energy storage
     print("\n6. Energy Storage Systems")
