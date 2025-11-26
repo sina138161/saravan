@@ -624,7 +624,7 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
     # Calculate carbon revenue
     carbon_revenue_result = carbon_model.calculate_tier_revenue(
         co2_avoided_tons,
-        tier='PGC',
+        tier_name='PGC',
         water_access_improvement=True
     )
 
