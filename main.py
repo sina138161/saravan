@@ -328,7 +328,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus="Electricity",
         e_nom=battery_model.capacity_kwh,
         e_cyclic=True,
-        standing_loss=battery_model.specs['self_discharge_hourly'],
+        standing_loss=battery_model.specs['theta_ESS'],
         capital_cost=battery_model.specs['capex'],
     )
 
@@ -338,7 +338,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Electricity",
         bus1="Electricity",
         p_nom=config.BATTERY_POWER_KW,
-        efficiency=battery_model.specs['charge_efficiency'],
+        efficiency=battery_model.specs['sigma_E_chr'],
     )
     print("   ✓ Battery ESS: {} kWh".format(battery_model.capacity_kwh))
 
@@ -349,7 +349,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus="Heat",
         e_nom=thermal_model.capacity_kwh,
         e_cyclic=True,
-        standing_loss=thermal_model.specs['self_discharge_hourly'],
+        standing_loss=thermal_model.specs['theta_TSS'],
         capital_cost=thermal_model.specs['capex'],
     )
     print("   ✓ Thermal Storage: {} kWh".format(thermal_model.capacity_kwh))
