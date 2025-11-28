@@ -11,6 +11,7 @@ from matplotlib.patches import Rectangle
 import seaborn as sns
 from typing import Dict, Optional
 import os
+from pathlib import Path
 
 # Set style for publication-quality plots
 plt.style.use('seaborn-v0_8-darkgrid')
@@ -52,10 +53,10 @@ class NexusVisualizer:
         self.results = results
         self.dpi = dpi
 
-        # Set output directory
+        # Set output directory - use config.OUTPUT_DIR by default
         if output_dir is None:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            self.output_dir = os.path.join(desktop, 'saravan_wind_water_results', 'plots')
+            from config import config
+            self.output_dir = str(config.OUTPUT_DIR / 'plots')
         else:
             self.output_dir = output_dir
 
