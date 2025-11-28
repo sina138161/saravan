@@ -1384,12 +1384,11 @@ def main():
     # Step 3: Select scenario
     scenario_selection = select_scenario()
 
-    # Create snapshots index
+    # Create snapshots index (must match data generation length)
     snapshots_index = pd.date_range(
         start=start_date,
-        end=end_date,
-        freq=frequency,
-        inclusive='left'
+        periods=snapshots,
+        freq=frequency
     )
 
     # Step 4: Run scenario(s) based on mode
