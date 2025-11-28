@@ -859,6 +859,10 @@ def create_visualizations(network, individual_results, combined_results, compreh
 
     # Prepare results for visualizers
     results = {
+        'optimization': {
+            'status': 'ok',
+            'objective': network.objective
+        },
         'individual': individual_results,
         'combined': combined_results,
         'comprehensive': comprehensive_results,
