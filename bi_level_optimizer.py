@@ -180,20 +180,22 @@ class BiLevelOptimizer:
 
         # ==================== GAS SUPPLY ====================
 
-        # Gas availability (affected by scenario)
-        gas_availability = self.modified_dataset['gas_availability']['availability_mwh'].values[:hours]
+        # Gas availability (from gas_network data + scenario constraints)
+        gas_available_mw = self.modified_dataset['gas_network']['gas_available_mw'].values[:hours]
+        # Convert MW to kW
+        gas_availability_kw = gas_available_mw * 1000
 
         network.add(
             "Generator",
             "Gas_Supply",
             bus="Gas_Bus",
-            p_nom=np.max(gas_availability) * 1.2,  # Slightly higher than max
-            p_max_pu=gas_availability / (np.max(gas_availability) * 1.2),
+            p_nom=np.max(gas_availability_kw) * 1.2,  # Slightly higher than max
+            p_max_pu=gas_availability_kw / (np.max(gas_availability_kw) * 1.2),
             marginal_cost=cfg.gas_fuel_cost_usd_per_kwh * self.scenario.gas_price_multiplier,
             carrier="gas"
         )
 
-        print(f"  ⛽ Gas supply: Max {np.max(gas_availability):.0f} kWh/h")
+        print(f"  ⛽ Gas supply: Max {np.max(gas_availability_kw):.0f} kW")
 
         # ==================== GAS MICROTURBINE (EXTENDABLE) ====================
 
@@ -249,8 +251,8 @@ class BiLevelOptimizer:
         # ==================== BIOGAS SYSTEM ====================
 
         # Biomass availability
-        if 'biomass_availability' in self.modified_dataset:
-            biomass_available = self.modified_dataset['biomass_availability']['biomass_ton_h'].values[:hours]
+        if 'biomass' in self.modified_dataset:
+            biomass_available = self.modified_dataset['biomass']['biomass_available_ton_h'].values[:hours]
             biogas_potential = biomass_available * 100  # Rough conversion to kWh
         else:
             biogas_potential = np.ones(hours) * 50  # Default: 50 kWh/h
@@ -288,8 +290,26 @@ class BiLevelOptimizer:
 
         # ==================== GRID CONNECTION ====================
 
-        # Grid availability
-        grid_availability = self.modified_dataset['grid_availability']['availability_factor'].values[:hours]
+        # Grid availability (create from scenario parameters)
+        timestamps = pd.to_datetime(self.modified_dataset['wind']['timestamp'].values[:hours])
+        grid_availability = np.ones(hours)
+
+        for i, ts in enumerate(timestamps):
+            month = ts.month
+            if month in [3, 4, 5]:
+                season = 'spring'
+            elif month in [6, 7, 8]:
+                season = 'summer'
+            elif month in [9, 10, 11]:
+                season = 'fall'
+            else:
+                season = 'winter'
+
+            grid_availability[i] = self.scenario.grid_seasonal_availability[season]
+
+            # Apply blackout hours if specified
+            if ts.hour in self.scenario.grid_blackout_hours:
+                grid_availability[i] = 0.0
 
         # Grid import
         network.add(
@@ -373,7 +393,7 @@ class BiLevelOptimizer:
         )
 
         # Water demand
-        water_demand = self.modified_dataset['water_demand']['total_m3'].values[:hours]
+        water_demand = self.modified_dataset['water_demand']['total_m3h'].values[:hours]
         network.add(
             "Load",
             "Water_Demand",
