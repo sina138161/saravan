@@ -130,7 +130,7 @@ class BiLevelOptimizer:
         # ==================== BATTERY STORAGE (EXTENDABLE) ====================
 
         battery_capex_annualized = cfg.calculate_annualized_capex(
-            cfg.battery_capex_usd_per_kwh * self.scenario.battery_capex_multiplier,
+            cfg.battery_capex_usd_per_kwh * getattr(self.scenario, 'battery_capex_multiplier', 1.0),
             cfg.battery_lifetime_years
         )
 
@@ -298,7 +298,7 @@ class BiLevelOptimizer:
             bus="Main_Bus",
             p_nom=cfg.grid_max_import_kw,
             p_max_pu=grid_availability,
-            marginal_cost=cfg.grid_import_price_usd_per_kwh * self.scenario.grid_price_multiplier,
+            marginal_cost=cfg.grid_import_price_usd_per_kwh * getattr(self.scenario, 'grid_price_multiplier', 1.0),
             carrier="grid"
         )
 
