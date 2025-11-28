@@ -96,7 +96,7 @@ class BiLevelOptimizer:
         # ==================== WIND GENERATION (EXTENDABLE) ====================
 
         # Wind capacity factor (weighted average of HAWT and Bladeless profiles)
-        wind_speed = self.modified_dataset['wind']['wind_speed_ms'].values
+        wind_speed = self.modified_dataset['wind']['wind_speed_ms'].values[:hours]
 
         # HAWT capacity factor
         hawt_cf = np.minimum(1.0, np.maximum(0.0, (wind_speed - 3) / (12 - 3)))
@@ -181,7 +181,7 @@ class BiLevelOptimizer:
         # ==================== GAS SUPPLY ====================
 
         # Gas availability (affected by scenario)
-        gas_availability = self.modified_dataset['gas_availability']['availability_mwh'].values
+        gas_availability = self.modified_dataset['gas_availability']['availability_mwh'].values[:hours]
 
         network.add(
             "Generator",
@@ -250,7 +250,7 @@ class BiLevelOptimizer:
 
         # Biomass availability
         if 'biomass_availability' in self.modified_dataset:
-            biomass_available = self.modified_dataset['biomass_availability']['biomass_ton_h'].values
+            biomass_available = self.modified_dataset['biomass_availability']['biomass_ton_h'].values[:hours]
             biogas_potential = biomass_available * 100  # Rough conversion to kWh
         else:
             biogas_potential = np.ones(hours) * 50  # Default: 50 kWh/h
@@ -289,7 +289,7 @@ class BiLevelOptimizer:
         # ==================== GRID CONNECTION ====================
 
         # Grid availability
-        grid_availability = self.modified_dataset['grid_availability']['availability_factor'].values
+        grid_availability = self.modified_dataset['grid_availability']['availability_factor'].values[:hours]
 
         # Grid import
         network.add(
@@ -353,7 +353,7 @@ class BiLevelOptimizer:
         # ==================== LOADS/DEMANDS ====================
 
         # Electricity demand
-        elec_demand = self.modified_dataset['electricity_demand']['total_kwh'].values
+        elec_demand = self.modified_dataset['electricity_demand']['total_kwh'].values[:hours]
         network.add(
             "Load",
             "Electricity_Demand",
@@ -363,7 +363,7 @@ class BiLevelOptimizer:
         )
 
         # Heat demand
-        heat_demand = self.modified_dataset['heat_demand']['total_kwh_thermal'].values
+        heat_demand = self.modified_dataset['heat_demand']['total_kwh_thermal'].values[:hours]
         network.add(
             "Load",
             "Heat_Demand",
@@ -373,7 +373,7 @@ class BiLevelOptimizer:
         )
 
         # Water demand
-        water_demand = self.modified_dataset['water_demand']['total_m3'].values
+        water_demand = self.modified_dataset['water_demand']['total_m3'].values[:hours]
         network.add(
             "Load",
             "Water_Demand",
