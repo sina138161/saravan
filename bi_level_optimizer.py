@@ -442,8 +442,18 @@ class BiLevelOptimizer:
         elapsed_time = time.time() - start_time
 
         print(f"   Progress: [▓▓▓▓▓▓▓▓▓▓] 100% - Complete!")
-        print(f"\n✅ Optimization status: {status}")
-        print(f"   Objective value: ${self.network.objective:,.0f}")
+        print(f"\n{'✅' if status == 'ok' else '❌'} Optimization status: {status}")
+
+        if status == 'ok' and hasattr(self.network, 'objective'):
+            print(f"   Objective value: ${self.network.objective:,.0f}")
+        elif status != 'ok':
+            print(f"   ⚠️  Optimization did not converge successfully")
+            print(f"   Status: {status}")
+            print(f"\n   Common causes:")
+            print(f"   - Problem is infeasible (constraints too tight)")
+            print(f"   - Problem is unbounded (missing constraints)")
+            print(f"   - Solver numerical issues")
+
         print(f"   Time elapsed: {elapsed_time:.1f} seconds")
         return status
 
