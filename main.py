@@ -1444,6 +1444,30 @@ def main():
                     print(f"        LCOE: ${econ['lcoe_usd_per_mwh']:.2f}/MWh")
 
             print(f"\nAll BI-LEVEL results saved to: {config.OUTPUT_DIR}/bilevel_*")
+
+            # Create BI-LEVEL comparison plots
+            successful_scenarios = [sid for sid, result in all_scenario_results.items() if 'error' not in result]
+
+            if len(successful_scenarios) > 1:
+                print("\n" + "="*80)
+                print("CREATING BI-LEVEL COMPARISON PLOTS")
+                print("="*80 + "\n")
+
+                try:
+                    from plotting.bilevel_comparison import BiLevelComparison
+
+                    bilevel_comp = BiLevelComparison(
+                        results_base_dir=config.OUTPUT_DIR,
+                        scenario_ids=successful_scenarios
+                    )
+                    bilevel_comp.create_all_comparison_plots()
+
+                    print(f"\n✅ BI-LEVEL comparison plots saved to: {config.OUTPUT_DIR / 'scenario_comparison'}/")
+                except Exception as e:
+                    print(f"\n⚠ Could not create BI-LEVEL comparison plots: {e}")
+                    import traceback
+                    traceback.print_exc()
+
             print("="*80 + "\n")
 
             return all_scenario_results

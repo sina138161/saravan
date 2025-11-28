@@ -602,20 +602,119 @@ class BiLevelOptimizer:
 
         return self.results
 
-    def save_results(self, output_dir: Path):
-        """ذخیره نتایج"""
+    def save_results_structured(self, output_dir: Path):
+        """
+        ذخیره نتایج با ساختار دو سطحی
+
+        ساختار:
+        output_dir/
+        ├── level1_results/     ← نتایج برنامه‌ریزی ظرفیت
+        │   ├── capacity_results.json
+        │   └── plots/
+        └── level2_results/     ← نتایج عملیاتی ساعتی
+            ├── operational_results.json
+            ├── network.nc       (PyPSA network)
+            └── plots/          (system_plots, nexus_plots, etc.)
+        """
         if self.results is None:
             raise ValueError("No results to save. Run optimize() and extract_results() first.")
 
-        output_path = output_dir / f"bilevel_results_{self.scenario.id}.json"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(output_dir)
 
-        with open(output_path, 'w') as f:
-            json.dump(self.results, f, indent=2)
+        # Create directories
+        level1_dir = output_dir / 'level1_results'
+        level1_plots_dir = level1_dir / 'plots'
+        level2_dir = output_dir / 'level2_results'
+        level2_plots_dir = level2_dir / 'plots'
 
-        print(f"\n💾 Results saved to: {output_path}")
+        level1_dir.mkdir(parents=True, exist_ok=True)
+        level1_plots_dir.mkdir(parents=True, exist_ok=True)
+        level2_dir.mkdir(parents=True, exist_ok=True)
+        level2_plots_dir.mkdir(parents=True, exist_ok=True)
 
-        return output_path
+        print(f"\n💾 Saving BI-LEVEL results with structure...")
+
+        # ==================== LEVEL 1 RESULTS ====================
+
+        level1_results = {
+            'scenario': self.results['scenario'],
+            'optimal_capacities': self.results['optimal_capacities'],
+            'economics': self.results['economics'],
+            'operations': self.results['operations'],
+            'emissions': self.results['emissions'],
+        }
+
+        level1_path = level1_dir / 'capacity_results.json'
+        with open(level1_path, 'w') as f:
+            json.dump(level1_results, f, indent=2)
+
+        print(f"  ✓ Level 1 results: {level1_path}")
+
+        # Create Level 1 visualizations
+        print(f"  📊 Creating Level 1 visualizations...")
+        try:
+            from plotting.level1_visualizer import Level1Visualizer
+
+            level1_viz = Level1Visualizer(
+                results=self.results,
+                output_dir=level1_plots_dir
+            )
+            level1_viz.create_all_plots()
+
+        except Exception as e:
+            print(f"  ⚠ Could not create Level 1 plots: {e}")
+
+        # ==================== LEVEL 2 RESULTS ====================
+
+        # Save network for later analysis
+        network_path = level2_dir / 'network.nc'
+        self.network.export_to_netcdf(str(network_path))
+        print(f"  ✓ Level 2 network: {network_path}")
+
+        # Level 2 operational results (detailed)
+        level2_results = {
+            'scenario': self.results['scenario'],
+            'operations': self.results['operations'],
+            'emissions': self.results['emissions'],
+            'optimal_capacities': self.results['optimal_capacities'],  # For reference
+        }
+
+        level2_path = level2_dir / 'operational_results.json'
+        with open(level2_path, 'w') as f:
+            json.dump(level2_results, f, indent=2)
+
+        print(f"  ✓ Level 2 results: {level2_path}")
+
+        # Create Level 2 visualizations (operational - detailed hourly)
+        print(f"  📊 Creating Level 2 visualizations...")
+        try:
+            from plotting.system_plots import SystemVisualizer
+
+            system_viz = SystemVisualizer(
+                network=self.network,
+                dataset=self.modified_dataset,
+                results=self.results,
+                output_dir=str(level2_plots_dir)
+            )
+            system_viz.create_all_plots()
+
+        except Exception as e:
+            print(f"  ⚠ Could not create Level 2 plots: {e}")
+            import traceback
+            traceback.print_exc()
+
+        print(f"\n✅ BI-LEVEL results saved successfully:")
+        print(f"   Level 1 (Capacity): {level1_dir}")
+        print(f"   Level 2 (Operations): {level2_dir}")
+
+        return {
+            'level1_dir': level1_dir,
+            'level2_dir': level2_dir,
+        }
+
+    def save_results(self, output_dir: Path):
+        """ذخیره نتایج (backward compatibility)"""
+        return self.save_results_structured(output_dir)
 
 
 if __name__ == "__main__":

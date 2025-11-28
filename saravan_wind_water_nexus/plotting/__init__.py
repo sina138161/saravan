@@ -7,6 +7,8 @@ This package contains all visualization modules:
 - carbon_plots: Carbon emissions and market visualizations
 - publication_figures: Publication-ready scientific figures
 - scenario_comparison: Comparative analysis across multiple scenarios
+- level1_visualizer: BI-LEVEL capacity planning visualizations
+- bilevel_comparison: BI-LEVEL scenario comparison plots
 """
 
 from .system_plots import SystemVisualizer
@@ -14,6 +16,8 @@ from .nexus_plots import NexusVisualizer
 from .carbon_plots import CarbonEmissionsVisualizer
 from .publication_figures import PublicationVisualizer
 from .scenario_comparison import ScenarioComparison
+from .level1_visualizer import Level1Visualizer
+from .bilevel_comparison import BiLevelComparison
 
 __all__ = [
     'SystemVisualizer',
@@ -21,4 +25,6 @@ __all__ = [
     'CarbonEmissionsVisualizer',
     'PublicationVisualizer',
     'ScenarioComparison',
+    'Level1Visualizer',
+    'BiLevelComparison',
 ]
