@@ -19,6 +19,7 @@ from matplotlib.collections import LineCollection
 import seaborn as sns
 from typing import Dict, List, Tuple, Optional
 import os
+from pathlib import Path
 
 # Publication-quality settings
 plt.rcParams['font.family'] = 'serif'
@@ -54,9 +55,10 @@ class PublicationVisualizer:
         self.results = results
         self.dataset = dataset
 
+        # Set output directory - use config.OUTPUT_DIR by default
         if output_dir is None:
-            project_dir = os.path.dirname(os.path.abspath(__file__))
-            self.output_dir = os.path.join(project_dir, 'publication_figures')
+            from config import config
+            self.output_dir = str(config.OUTPUT_DIR / 'publication_figures')
         else:
             self.output_dir = output_dir
 

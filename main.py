@@ -136,10 +136,10 @@ def initialize_all_technologies():
     # Biogas systems
     print("\n3. Biogas and Biomass Systems")
     technologies['anaerobic_digester'] = AnaerobicDigester()
-    print(f"   ✓ Anaerobic Digester: {technologies['anaerobic_digester'].specs['capacity_m3']} m³")
+    print(f"   ✓ Anaerobic Digester: {technologies['anaerobic_digester'].specs['V_digester']} m³")
 
     technologies['dewatering'] = Dewatering()
-    print(f"   ✓ Dewatering: η = {technologies['dewatering'].specs['efficiency']}")
+    print(f"   ✓ Dewatering: max capacity = {technologies['dewatering'].specs['V_d_max']} m³/h")
 
     # Carbon systems
     print("\n4. Carbon Capture and Utilization")
@@ -149,12 +149,10 @@ def initialize_all_technologies():
     # Water systems
     print("\n5. Water Management Systems")
     technologies['groundwater_well'] = GroundwaterWell()
-    print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_depth_m']} m")
+    print(f"   ✓ Groundwater Well: depth = {technologies['groundwater_well'].specs['well_specs']['depth']} m")
 
     technologies['elevated_storage'] = ElevatedStorage()
-    # Get the actual capacity from the tank specs (depends on tank type)
-    tank_spec = technologies['elevated_storage'].specs['tank_types']['medium']
-    print(f"   ✓ Elevated Storage: {tank_spec['capacity']} m³")
+    print(f"   ✓ Elevated Storage: {technologies['elevated_storage'].specs['V_awt_max']} m³")
 
     # Energy storage
     print("\n6. Energy Storage Systems")
@@ -269,9 +267,9 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         "Generator",
         "Gas_Microturbine",
         bus="Electricity",
-        p_nom=gt_model.specs['capacity'],
-        efficiency=gt_model.specs['efficiency_electrical'],
-        marginal_cost=config.NATURAL_GAS_PRICE / gt_model.specs['efficiency_electrical'],
+        p_nom=gt_model.specs['rated_capacity_kw'],
+        efficiency=gt_model.specs['electrical_efficiency'],
+        marginal_cost=config.NATURAL_GAS_PRICE / gt_model.specs['electrical_efficiency'],
         capital_cost=gt_model.specs['capex'],
     )
 
@@ -281,7 +279,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         "Heat_Recovery_WHB",
         bus0="Electricity",
         bus1="Heat",
-        p_nom=gt_model.specs['capacity'],
+        p_nom=gt_model.specs['rated_capacity_kw'],
         efficiency=technologies['heat_recovery'].specs['recovery_efficiency'],
     )
     print("   ✓ Gas Microturbine + WHB heat recovery")
@@ -316,7 +314,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Biogas",
         bus1="Heat",
         p_nom=100,
-        efficiency=technologies['gas_boiler'].specs['efficiency_thermal'],
+        efficiency=technologies['gas_boiler'].specs['thermal_efficiency'],
     )
     print("   ✓ Biogas production and conversion")
 
@@ -330,7 +328,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus="Electricity",
         e_nom=battery_model.capacity_kwh,
         e_cyclic=True,
-        standing_loss=battery_model.specs['self_discharge_hourly'],
+        standing_loss=battery_model.specs['theta_ESS'],
         capital_cost=battery_model.specs['capex'],
     )
 
@@ -340,7 +338,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Electricity",
         bus1="Electricity",
         p_nom=config.BATTERY_POWER_KW,
-        efficiency=battery_model.specs['charge_efficiency'],
+        efficiency=battery_model.specs['sigma_E_chr'],
     )
     print("   ✓ Battery ESS: {} kWh".format(battery_model.capacity_kwh))
 
@@ -351,7 +349,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus="Heat",
         e_nom=thermal_model.capacity_kwh,
         e_cyclic=True,
-        standing_loss=thermal_model.specs['self_discharge_hourly'],
+        standing_loss=thermal_model.specs['theta_TSS'],
         capital_cost=thermal_model.specs['capex'],
     )
     print("   ✓ Thermal Storage: {} kWh".format(thermal_model.capacity_kwh))
@@ -368,7 +366,7 @@ def build_comprehensive_network(technologies, dataset, snapshots):
         bus0="Electricity",
         bus1="Electricity",  # Dummy for now
         p_nom=config.GROUNDWATER_MAX_EXTRACTION * config.PUMPING_POWER_PER_M3,
-        efficiency=well_model.specs['pump_efficiency'],
+        efficiency=well_model.specs['pump_specs']['efficiency'],
         marginal_cost=0,
         capital_cost=well_model.specs['capex'],
     )
@@ -510,13 +508,13 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
         gt_model = technologies['gas_microturbine']
 
         # Calculate fuel consumption using exact formula
-        fuel_consumed = gt_gen / gt_model.specs['efficiency_electrical']
+        fuel_consumed = gt_gen / gt_model.specs['electrical_efficiency']
 
         results['Gas_Microturbine'] = {
             'type': 'thermal',
             'generation_kwh': gt_gen,
             'fuel_consumed_kwh': fuel_consumed,
-            'efficiency': gt_model.specs['efficiency_electrical'],
+            'efficiency': gt_model.specs['electrical_efficiency'],
             'co2_kg': fuel_consumed * 0.20,  # emission factor
         }
         print(f"   Generation: {gt_gen:,.0f} kWh")
@@ -601,7 +599,7 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
         pumping_energy = network.links_t.p0['Water_Pump'].sum()
 
         # Calculate water pumped using exact formula (inverse)
-        water_pumped_m3 = pumping_energy * well_model.specs['pump_efficiency'] / config.PUMPING_POWER_PER_M3
+        water_pumped_m3 = pumping_energy * well_model.specs['pump_specs']['efficiency'] / config.PUMPING_POWER_PER_M3
 
         results['Water_System'] = {
             'type': 'water',
@@ -626,7 +624,7 @@ def calculate_individual_technology_results(network, technologies, dataset, snap
     # Calculate carbon revenue
     carbon_revenue_result = carbon_model.calculate_tier_revenue(
         co2_avoided_tons,
-        tier='PGC',
+        tier_name='PGC',
         water_access_improvement=True
     )
 
@@ -861,6 +859,10 @@ def create_visualizations(network, individual_results, combined_results, compreh
 
     # Prepare results for visualizers
     results = {
+        'optimization': {
+            'status': 'ok',
+            'objective': network.objective
+        },
         'individual': individual_results,
         'combined': combined_results,
         'comprehensive': comprehensive_results,
@@ -876,7 +878,7 @@ def create_visualizations(network, individual_results, combined_results, compreh
     if config.CREATE_STANDARD_PLOTS:
         print("\n1. Creating Standard Nexus Plots...")
         try:
-            nexus_viz = NexusVisualizer(network, results, dataset)
+            nexus_viz = NexusVisualizer(dataset, network, results)
             nexus_viz.create_all_plots()
         except Exception as e:
             print(f"   Warning: Could not create nexus plots: {e}")

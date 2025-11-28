@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List
 import os
+from pathlib import Path
 
 
 class CarbonEmissionsVisualizer:
@@ -34,9 +35,10 @@ class CarbonEmissionsVisualizer:
         self.results = results
         self.carbon_model = carbon_model
 
+        # Set output directory - use config.OUTPUT_DIR by default
         if output_dir is None:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            self.output_dir = os.path.join(desktop, 'saravan_carbon_plots')
+            from config import config
+            self.output_dir = str(config.OUTPUT_DIR / 'carbon_plots')
         else:
             self.output_dir = output_dir
 
