@@ -44,6 +44,7 @@ from plotting.system_plots import SystemVisualizer
 from plotting.nexus_plots import NexusVisualizer
 from plotting.carbon_plots import CarbonEmissionsVisualizer
 from plotting.publication_figures import PublicationVisualizer
+from plotting.scenario_comparison import ScenarioComparison
 from models.carbon_market import CarbonMarketModel
 
 # Import scenario management
@@ -1315,6 +1316,28 @@ def main():
                 print(f"        LCOE: ${comp_results['economics']['lcoe_usd_per_mwh']:.2f}/MWh")
 
         print(f"\nAll results saved to: {config.OUTPUT_DIR}")
+
+        # Create scenario comparison plots
+        successful_scenarios = [sid for sid, result in all_scenario_results.items() if 'error' not in result]
+
+        if len(successful_scenarios) > 1:
+            print("\n" + "="*80)
+            print("CREATING SCENARIO COMPARISON PLOTS")
+            print("="*80 + "\n")
+
+            try:
+                comparator = ScenarioComparison(
+                    results_base_dir=config.OUTPUT_DIR,
+                    scenario_ids=successful_scenarios
+                )
+                comparator.create_all_comparison_plots()
+
+                print(f"\n✅ Scenario comparison plots saved to: {config.OUTPUT_DIR / 'scenario_comparison'}/")
+            except Exception as e:
+                print(f"\n⚠ Could not create scenario comparison plots: {e}")
+                import traceback
+                traceback.print_exc()
+
         print("="*80 + "\n")
 
         return all_scenario_results

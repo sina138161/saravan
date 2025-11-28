@@ -6,16 +6,19 @@ This package contains all visualization modules:
 - nexus_plots: Detailed nexus system visualizations
 - carbon_plots: Carbon emissions and market visualizations
 - publication_figures: Publication-ready scientific figures
+- scenario_comparison: Comparative analysis across multiple scenarios
 """
 
 from .system_plots import SystemVisualizer
 from .nexus_plots import NexusVisualizer
 from .carbon_plots import CarbonEmissionsVisualizer
 from .publication_figures import PublicationVisualizer
+from .scenario_comparison import ScenarioComparison
 
 __all__ = [
     'SystemVisualizer',
     'NexusVisualizer',
     'CarbonEmissionsVisualizer',
     'PublicationVisualizer',
+    'ScenarioComparison',
 ]

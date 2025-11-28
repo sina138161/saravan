@@ -85,8 +85,14 @@ class SystemVisualizer:
         print("🎯 8. Technology contribution pie charts...")
         self.plot_technology_contribution()
 
+        print("❄️ 9. Coldest day detailed analysis...")
+        self.plot_coldest_day_analysis()
+
+        print("☀️ 10. Hottest day detailed analysis...")
+        self.plot_hottest_day_analysis()
+
         print(f"\n✅ All system plots saved to: {self.output_dir}/")
-        print(f"   Total plots created: 8\n")
+        print(f"   Total plots created: 10\n")
 
     def _get_timestamps(self):
         """Get timestamps from dataset"""
@@ -503,6 +509,305 @@ class SystemVisualizer:
 
         plt.tight_layout()
         plt.savefig(f'{self.output_dir}/technology_contribution.png', dpi=self.dpi, bbox_inches='tight')
+        plt.close()
+
+    def plot_coldest_day_analysis(self):
+        """Plot detailed analysis for the coldest day of the year"""
+
+        timestamps = self._get_timestamps()
+
+        # Find coldest day based on heat demand
+        heat_demand = self.dataset['heat_demand']['total_kwh_thermal'].values
+
+        # Get daily total heat demand
+        df = pd.DataFrame({
+            'timestamp': timestamps,
+            'heat_demand': heat_demand
+        })
+        df['date'] = df['timestamp'].dt.date
+        daily_heat = df.groupby('date')['heat_demand'].sum()
+
+        # Find coldest day
+        coldest_date = daily_heat.idxmax()
+        coldest_day_mask = df['date'] == coldest_date
+        coldest_day_hours = df[coldest_day_mask].index
+
+        if len(coldest_day_hours) == 0:
+            print("  ⚠ Could not identify coldest day")
+            return
+
+        # Extract data for coldest day
+        day_timestamps = timestamps[coldest_day_mask]
+        hours = range(24) if len(coldest_day_hours) == 24 else range(len(coldest_day_hours))
+
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+
+        # 1. Electricity supply and demand
+        elec_demand = self.dataset['electricity_demand']['total_kwh'].values[coldest_day_mask]
+
+        wind_cols = [c for c in self.network.generators_t.p.columns if 'Wind_' in c]
+        wind_gen = self.network.generators_t.p[wind_cols].iloc[coldest_day_hours].sum(axis=1).values if wind_cols else np.zeros(len(hours))
+
+        gas_cols = [c for c in self.network.generators_t.p.columns if 'Gas_Microturbine' in c]
+        gas_gen = self.network.generators_t.p[gas_cols].iloc[coldest_day_hours].sum(axis=1).values if gas_cols else np.zeros(len(hours))
+
+        grid_cols = [c for c in self.network.generators_t.p.columns if 'Grid' in c]
+        grid_gen = self.network.generators_t.p[grid_cols].iloc[coldest_day_hours].sum(axis=1).values if grid_cols else np.zeros(len(hours))
+
+        ax1.fill_between(hours, 0, wind_gen, label='Wind', alpha=0.7, color='#2E86AB')
+        ax1.fill_between(hours, wind_gen, wind_gen + gas_gen, label='Gas', alpha=0.7, color='#A23B72')
+        ax1.fill_between(hours, wind_gen + gas_gen, wind_gen + gas_gen + grid_gen,
+                        label='Grid', alpha=0.7, color='#6A6A6A')
+        ax1.plot(hours, elec_demand, 'k--', linewidth=2, label='Demand')
+        ax1.set_xlabel('Hour of Day', fontsize=11)
+        ax1.set_ylabel('Power (kW)', fontsize=11)
+        ax1.set_title(f'Electricity: Coldest Day ({coldest_date})', fontsize=12, fontweight='bold')
+        ax1.legend(loc='upper right', fontsize=9)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xticks(range(0, 24, 2))
+
+        # 2. Heat supply and demand
+        heat_demand_day = heat_demand[coldest_day_mask]
+
+        hr_cols = [c for c in self.network.links_t.p1.columns if 'Heat_Recovery' in c]
+        heat_recovery = self.network.links_t.p1[hr_cols].iloc[coldest_day_hours].sum(axis=1).values if hr_cols else np.zeros(len(hours))
+
+        boiler_cols = [c for c in self.network.generators_t.p.columns if 'Boiler' in c]
+        boiler_heat = self.network.generators_t.p[boiler_cols].iloc[coldest_day_hours].sum(axis=1).values if boiler_cols else np.zeros(len(hours))
+
+        ax2.fill_between(hours, 0, heat_recovery, label='Heat Recovery', alpha=0.7, color='#F18F01')
+        ax2.fill_between(hours, heat_recovery, heat_recovery + boiler_heat,
+                        label='Gas Boiler', alpha=0.7, color='#A23B72')
+        ax2.plot(hours, heat_demand_day, 'k--', linewidth=2, label='Demand')
+        ax2.set_xlabel('Hour of Day', fontsize=11)
+        ax2.set_ylabel('Heat Power (kW-th)', fontsize=11)
+        ax2.set_title(f'Heat: Coldest Day ({coldest_date})', fontsize=12, fontweight='bold')
+        ax2.legend(loc='upper right', fontsize=9)
+        ax2.grid(True, alpha=0.3)
+        ax2.set_xticks(range(0, 24, 2))
+
+        # 3. Water demand and tank level
+        water_demand_day = self.dataset['water_demand']['total_m3'].values[coldest_day_mask]
+
+        if 'Water_Tank' in self.network.stores.index:
+            tank_volume = self.network.stores_t.e['Water_Tank'].iloc[coldest_day_hours].values
+            tank_capacity = self.network.stores.loc['Water_Tank', 'e_nom']
+        else:
+            tank_volume = np.zeros(len(hours))
+            tank_capacity = 0
+
+        ax3.plot(hours, tank_volume, color='#17becf', linewidth=2, marker='o', markersize=4, label='Tank Level')
+        ax3.fill_between(hours, 0, tank_volume, alpha=0.3, color='#17becf')
+        if tank_capacity > 0:
+            ax3.axhline(y=tank_capacity, color='red', linestyle='--', alpha=0.5, label=f'Capacity ({tank_capacity:.0f} m³)')
+        ax3.set_xlabel('Hour of Day', fontsize=11)
+        ax3.set_ylabel('Tank Volume (m³)', fontsize=11)
+        ax3.set_title(f'Water Tank: Coldest Day ({coldest_date})', fontsize=12, fontweight='bold')
+        ax3.legend(loc='upper right', fontsize=9)
+        ax3.grid(True, alpha=0.3)
+        ax3.set_xticks(range(0, 24, 2))
+
+        # 4. Battery state of charge
+        if 'Battery' in self.network.stores.index:
+            soc = self.network.stores_t.e['Battery'].iloc[coldest_day_hours].values
+            capacity = self.network.stores.loc['Battery', 'e_nom']
+            soc_percent = (soc / capacity) * 100 if capacity > 0 else np.zeros(len(hours))
+        else:
+            soc_percent = np.zeros(len(hours))
+
+        ax4.plot(hours, soc_percent, color='#2E86AB', linewidth=2, marker='s', markersize=4)
+        ax4.fill_between(hours, 0, soc_percent, alpha=0.3, color='#2E86AB')
+        ax4.axhline(y=20, color='red', linestyle='--', alpha=0.5, label='Low (20%)')
+        ax4.axhline(y=80, color='orange', linestyle='--', alpha=0.5, label='High (80%)')
+        ax4.set_xlabel('Hour of Day', fontsize=11)
+        ax4.set_ylabel('State of Charge (%)', fontsize=11)
+        ax4.set_title(f'Battery: Coldest Day ({coldest_date})', fontsize=12, fontweight='bold')
+        ax4.set_ylim([0, 100])
+        ax4.legend(loc='upper right', fontsize=9)
+        ax4.grid(True, alpha=0.3)
+        ax4.set_xticks(range(0, 24, 2))
+
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/coldest_day_analysis.png', dpi=self.dpi, bbox_inches='tight')
+        plt.close()
+
+    def plot_hottest_day_analysis(self):
+        """Plot detailed analysis for the hottest day of the year"""
+
+        timestamps = self._get_timestamps()
+
+        # Find hottest day based on electricity demand (cooling load in summer)
+        elec_demand = self.dataset['electricity_demand']['total_kwh'].values
+
+        # Get daily total electricity demand
+        df = pd.DataFrame({
+            'timestamp': timestamps,
+            'elec_demand': elec_demand
+        })
+        df['date'] = df['timestamp'].dt.date
+        df['month'] = pd.to_datetime(df['timestamp']).dt.month
+
+        # Filter to summer months (June, July, August)
+        summer_mask = df['month'].isin([6, 7, 8])
+        summer_df = df[summer_mask]
+
+        if len(summer_df) == 0:
+            # No summer data, use highest demand day overall
+            daily_demand = df.groupby('date')['elec_demand'].sum()
+        else:
+            daily_demand = summer_df.groupby('date')['elec_demand'].sum()
+
+        if len(daily_demand) == 0:
+            print("  ⚠ Could not identify hottest day")
+            return
+
+        # Find hottest day
+        hottest_date = daily_demand.idxmax()
+        hottest_day_mask = df['date'] == hottest_date
+        hottest_day_hours = df[hottest_day_mask].index
+
+        if len(hottest_day_hours) == 0:
+            print("  ⚠ Could not identify hottest day")
+            return
+
+        # Extract data for hottest day
+        day_timestamps = timestamps[hottest_day_mask]
+        hours = range(24) if len(hottest_day_hours) == 24 else range(len(hottest_day_hours))
+
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+
+        # 1. Electricity supply and demand
+        elec_demand_day = elec_demand[hottest_day_mask]
+
+        wind_cols = [c for c in self.network.generators_t.p.columns if 'Wind_' in c]
+        wind_gen = self.network.generators_t.p[wind_cols].iloc[hottest_day_hours].sum(axis=1).values if wind_cols else np.zeros(len(hours))
+
+        gas_cols = [c for c in self.network.generators_t.p.columns if 'Gas_Microturbine' in c]
+        gas_gen = self.network.generators_t.p[gas_cols].iloc[hottest_day_hours].sum(axis=1).values if gas_cols else np.zeros(len(hours))
+
+        grid_cols = [c for c in self.network.generators_t.p.columns if 'Grid' in c]
+        grid_gen = self.network.generators_t.p[grid_cols].iloc[hottest_day_hours].sum(axis=1).values if grid_cols else np.zeros(len(hours))
+
+        biogas_cols = [c for c in self.network.generators_t.p.columns if 'Biogas' in c]
+        biogas_gen = self.network.generators_t.p[biogas_cols].iloc[hottest_day_hours].sum(axis=1).values if biogas_cols else np.zeros(len(hours))
+
+        ax1.fill_between(hours, 0, wind_gen, label='Wind', alpha=0.7, color='#2E86AB')
+        ax1.fill_between(hours, wind_gen, wind_gen + gas_gen, label='Gas', alpha=0.7, color='#A23B72')
+        ax1.fill_between(hours, wind_gen + gas_gen, wind_gen + gas_gen + biogas_gen,
+                        label='Biogas', alpha=0.7, color='#F18F01')
+        ax1.fill_between(hours, wind_gen + gas_gen + biogas_gen,
+                        wind_gen + gas_gen + biogas_gen + grid_gen,
+                        label='Grid', alpha=0.7, color='#6A6A6A')
+        ax1.plot(hours, elec_demand_day, 'k--', linewidth=2, label='Demand')
+        ax1.set_xlabel('Hour of Day', fontsize=11)
+        ax1.set_ylabel('Power (kW)', fontsize=11)
+        ax1.set_title(f'Electricity: Hottest Day ({hottest_date})', fontsize=12, fontweight='bold')
+        ax1.legend(loc='upper right', fontsize=9)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xticks(range(0, 24, 2))
+
+        # 2. Water demand and production (critical in summer)
+        water_demand_day = self.dataset['water_demand']['total_m3'].values[hottest_day_mask]
+
+        if 'Water_Tank' in self.network.stores.index:
+            tank_volume = self.network.stores_t.e['Water_Tank'].iloc[hottest_day_hours].values
+            tank_capacity = self.network.stores.loc['Water_Tank', 'e_nom']
+        else:
+            tank_volume = np.zeros(len(hours))
+            tank_capacity = 0
+
+        ax2_twin = ax2.twinx()
+        ax2.plot(hours, water_demand_day, color='#C73E1D', linewidth=2, marker='o',
+                markersize=4, label='Water Demand')
+        ax2_twin.plot(hours, tank_volume, color='#17becf', linewidth=2, marker='s',
+                     markersize=4, label='Tank Level', linestyle='--')
+
+        ax2.set_xlabel('Hour of Day', fontsize=11)
+        ax2.set_ylabel('Water Demand (m³/h)', fontsize=11, color='#C73E1D')
+        ax2_twin.set_ylabel('Tank Volume (m³)', fontsize=11, color='#17becf')
+        ax2.set_title(f'Water: Hottest Day ({hottest_date})', fontsize=12, fontweight='bold')
+        ax2.tick_params(axis='y', labelcolor='#C73E1D')
+        ax2_twin.tick_params(axis='y', labelcolor='#17becf')
+
+        # Combine legends
+        lines1, labels1 = ax2.get_legend_handles_labels()
+        lines2, labels2 = ax2_twin.get_legend_handles_labels()
+        ax2.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
+
+        ax2.grid(True, alpha=0.3)
+        ax2.set_xticks(range(0, 24, 2))
+
+        # 3. Battery operation (important for peak shaving)
+        if 'Battery' in self.network.stores.index:
+            soc = self.network.stores_t.e['Battery'].iloc[hottest_day_hours].values
+            capacity = self.network.stores.loc['Battery', 'e_nom']
+            soc_percent = (soc / capacity) * 100 if capacity > 0 else np.zeros(len(hours))
+
+            battery_link_cols = [c for c in self.network.links_t.p0.columns if 'Battery' in c]
+            if battery_link_cols:
+                battery_power = self.network.links_t.p0[battery_link_cols[0]].iloc[hottest_day_hours].values
+            else:
+                battery_power = np.zeros(len(hours))
+        else:
+            soc_percent = np.zeros(len(hours))
+            battery_power = np.zeros(len(hours))
+
+        ax3_twin = ax3.twinx()
+        ax3.plot(hours, soc_percent, color='#2E86AB', linewidth=2, marker='o', markersize=4, label='SOC')
+        ax3.fill_between(hours, 0, soc_percent, alpha=0.3, color='#2E86AB')
+
+        charge = np.maximum(0, battery_power)
+        discharge = np.minimum(0, battery_power)
+        ax3_twin.fill_between(hours, 0, charge, alpha=0.6, color='green', label='Charging')
+        ax3_twin.fill_between(hours, 0, discharge, alpha=0.6, color='red', label='Discharging')
+
+        ax3.set_xlabel('Hour of Day', fontsize=11)
+        ax3.set_ylabel('State of Charge (%)', fontsize=11, color='#2E86AB')
+        ax3_twin.set_ylabel('Power (kW)', fontsize=11, color='black')
+        ax3.set_title(f'Battery: Hottest Day ({hottest_date})', fontsize=12, fontweight='bold')
+        ax3.set_ylim([0, 100])
+        ax3.tick_params(axis='y', labelcolor='#2E86AB')
+
+        # Combine legends
+        lines1, labels1 = ax3.get_legend_handles_labels()
+        lines2, labels2 = ax3_twin.get_legend_handles_labels()
+        ax3.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
+
+        ax3.grid(True, alpha=0.3)
+        ax3.set_xticks(range(0, 24, 2))
+
+        # 4. Environmental conditions (wind, solar potential)
+        wind_speed = self.dataset['wind']['wind_speed_ms'].values[hottest_day_mask]
+
+        # Get dust/PM10 if available
+        if 'dust' in self.dataset:
+            pm10 = self.dataset['dust']['pm10_ugm3'].values[hottest_day_mask]
+        else:
+            pm10 = np.zeros(len(hours))
+
+        ax4_twin = ax4.twinx()
+        ax4.plot(hours, wind_speed, color='#2E86AB', linewidth=2, marker='o',
+                markersize=4, label='Wind Speed')
+        ax4_twin.plot(hours, pm10, color='#8B4513', linewidth=2, marker='^',
+                     markersize=4, label='PM10 (Dust)', linestyle='--')
+
+        ax4.set_xlabel('Hour of Day', fontsize=11)
+        ax4.set_ylabel('Wind Speed (m/s)', fontsize=11, color='#2E86AB')
+        ax4_twin.set_ylabel('PM10 (μg/m³)', fontsize=11, color='#8B4513')
+        ax4.set_title(f'Environment: Hottest Day ({hottest_date})', fontsize=12, fontweight='bold')
+        ax4.tick_params(axis='y', labelcolor='#2E86AB')
+        ax4_twin.tick_params(axis='y', labelcolor='#8B4513')
+
+        # Combine legends
+        lines1, labels1 = ax4.get_legend_handles_labels()
+        lines2, labels2 = ax4_twin.get_legend_handles_labels()
+        ax4.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9)
+
+        ax4.grid(True, alpha=0.3)
+        ax4.set_xticks(range(0, 24, 2))
+
+        plt.tight_layout()
+        plt.savefig(f'{self.output_dir}/hottest_day_analysis.png', dpi=self.dpi, bbox_inches='tight')
         plt.close()
 
 
