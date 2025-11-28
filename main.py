@@ -55,6 +55,10 @@ from scenario_runner import (
     save_scenario_results
 )
 
+# Import BI-LEVEL optimization
+from bi_level_optimizer import BiLevelOptimizer
+from bi_level_config import BI_LEVEL_CONFIG
+
 
 def select_time_horizon():
     """
@@ -109,6 +113,50 @@ def select_time_horizon():
     print(f"  Snapshots: {snapshots} hours")
 
     return start_date, end_date, frequency, description, snapshots
+
+
+def select_optimization_mode():
+    """
+    Select optimization mode: Single-Level or BI-LEVEL
+
+    Returns:
+        str: 'SINGLE' or 'BILEVEL'
+    """
+    print("\n" + "="*80)
+    print("OPTIMIZATION MODE SELECTION")
+    print("="*80)
+
+    print("\nPlease select the optimization mode:\n")
+    print("  [1] SINGLE-LEVEL: Operational optimization with fixed capacity")
+    print("      - You specify technology counts (e.g., 5 HAWT, 10 Bladeless)")
+    print("      - Optimizer decides hourly dispatch")
+    print("      - Fast, suitable for operational planning\n")
+
+    print("  [2] BI-LEVEL: Capacity planning + operational optimization")
+    print("      - Level 1: Optimizer decides optimal capacity (30-year planning)")
+    print("      - Level 2: Optimizer decides hourly dispatch (year 30)")
+    print("      - Slower, suitable for investment decisions")
+    print("      - MUST use 1-year time horizon (8760 hours)\n")
+
+    while True:
+        try:
+            choice = input("Enter your choice (1 or 2): ").strip()
+
+            if choice == "1":
+                print("\n✓ Selected: SINGLE-LEVEL optimization")
+                return 'SINGLE'
+            elif choice == "2":
+                print("\n✓ Selected: BI-LEVEL optimization")
+                print("  NOTE: Time horizon will be set to 1 year (8760 hours)")
+                return 'BILEVEL'
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: {e}. Please try again.")
 
 
 def select_scenario():
@@ -1245,11 +1293,80 @@ def run_single_scenario_complete(scenario, time_horizon_config, base_technologie
     }
 
 
+def run_bilevel_scenario(scenario, snapshots_index):
+    """
+    Run BI-LEVEL optimization for a single scenario
+
+    Args:
+        scenario: ScenarioConfig object
+        snapshots_index: pandas DatetimeIndex for optimization
+
+    Returns:
+        dict with optimization results
+    """
+    print(f"\n{'='*80}")
+    print(f"BI-LEVEL OPTIMIZATION: {scenario.name}")
+    print(f"{'='*80}\n")
+
+    # Generate data for year 30
+    print("📊 Generating data for year 30...")
+    data_gen = SaravanDataGenerator()
+    dataset = data_gen.generate_all_data()
+
+    # Create BI-LEVEL optimizer
+    optimizer = BiLevelOptimizer(
+        scenario=scenario,
+        dataset=dataset,
+        snapshots=snapshots_index,
+        config_bilevel=BI_LEVEL_CONFIG
+    )
+
+    # Build network
+    optimizer.build_expansion_network()
+
+    # Optimize
+    status = optimizer.optimize(solver_name='glpk')
+
+    if status != 'ok':
+        print(f"\n❌ Optimization failed with status: {status}")
+        return {'error': f'Optimization status: {status}'}
+
+    # Extract results
+    results = optimizer.extract_results()
+
+    # Save results
+    scenario_dir = config.OUTPUT_DIR / f"bilevel_{scenario.id}"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+
+    results_path = optimizer.save_results(scenario_dir)
+
+    print(f"\n✅ BI-LEVEL optimization completed for {scenario.id}")
+
+    return {
+        'scenario': scenario,
+        'results': results,
+        'optimizer': optimizer,
+        'output_dir': scenario_dir,
+    }
+
+
 def main():
     """Main execution function with scenario support"""
 
-    # Step 1: Select time horizon
-    start_date, end_date, frequency, time_description, snapshots = select_time_horizon()
+    # Step 1: Select optimization mode
+    opt_mode = select_optimization_mode()
+
+    # Step 2: Select time horizon
+    if opt_mode == 'BILEVEL':
+        # Force 1 year for BI-LEVEL
+        start_date = "2025-01-01"
+        end_date = "2025-12-31"
+        frequency = "H"
+        time_description = "1 Year Ahead (8760 hours) - for BI-LEVEL"
+        snapshots = 8760
+        print(f"\n✓ Time horizon set to: {time_description}")
+    else:
+        start_date, end_date, frequency, time_description, snapshots = select_time_horizon()
 
     time_horizon_config = {
         'start_date': start_date,
@@ -1264,39 +1381,110 @@ def main():
     config.SNAPSHOTS_END = end_date
     config.SNAPSHOTS_FREQ = frequency
 
-    # Step 2: Select scenario
+    # Step 3: Select scenario
     scenario_selection = select_scenario()
 
-    # Step 3: Initialize base technologies
-    base_technologies = initialize_all_technologies()
+    # Create snapshots index
+    snapshots_index = pd.date_range(
+        start=start_date,
+        end=end_date,
+        freq=frequency,
+        inclusive='left'
+    )
 
-    # Step 4: Run scenario(s)
-    if scenario_selection == 'ALL':
-        # Run all scenarios
-        print("\n" + "#"*80)
-        print("# RUNNING ALL SCENARIOS")
-        print("#"*80 + "\n")
+    # Step 4: Run scenario(s) based on mode
+    if opt_mode == 'BILEVEL':
+        # ==================== BI-LEVEL MODE ====================
 
-        all_scenario_results = {}
+        if scenario_selection == 'ALL':
+            # Run BI-LEVEL for all scenarios
+            print("\n" + "#"*80)
+            print("# RUNNING BI-LEVEL OPTIMIZATION FOR ALL SCENARIOS")
+            print("#"*80 + "\n")
 
-        for sid in SCENARIOS.keys():
-            scenario = get_scenario(sid)
+            all_scenario_results = {}
 
-            print(f"\n{'#'*80}")
-            print(f"# SCENARIO {sid}/{len(SCENARIOS)}: {scenario.name}")
-            print(f"{'#'*80}\n")
+            for sid in SCENARIOS.keys():
+                scenario = get_scenario(sid)
 
-            try:
-                result = run_single_scenario_complete(
-                    scenario, time_horizon_config, base_technologies
-                )
-                all_scenario_results[sid] = result
+                print(f"\n{'#'*80}")
+                print(f"# BI-LEVEL SCENARIO {sid}: {scenario.name}")
+                print(f"{'#'*80}\n")
 
-            except Exception as e:
-                print(f"\n❌ Scenario {sid} failed: {e}")
-                import traceback
-                traceback.print_exc()
-                all_scenario_results[sid] = {'error': str(e)}
+                try:
+                    result = run_bilevel_scenario(scenario, snapshots_index)
+                    all_scenario_results[sid] = result
+
+                except Exception as e:
+                    print(f"\n❌ BI-LEVEL Scenario {sid} failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    all_scenario_results[sid] = {'error': str(e)}
+
+            # Summary for BI-LEVEL results
+            print("\n" + "="*80)
+            print("ALL BI-LEVEL SCENARIOS COMPLETE")
+            print("="*80 + "\n")
+
+            print("Summary:")
+            for sid, result in all_scenario_results.items():
+                if 'error' in result:
+                    print(f"  [{sid}] ❌ Failed: {result['error']}")
+                else:
+                    scenario = result['scenario']
+                    econ = result['results']['economics']
+                    ops = result['results']['operations']
+                    caps = result['results']['optimal_capacities']
+
+                    print(f"  [{sid}] ✓ {scenario.name}")
+                    print(f"        Optimal Wind: {caps.get('wind_total_kw', 0):.0f} kW")
+                    print(f"        Optimal Battery: {caps.get('battery_kwh', 0):.0f} kWh")
+                    print(f"        Renewable: {ops['renewable_fraction_pct']:.1f}%")
+                    print(f"        30-year NPV: ${econ['total_npv_30_years_usd']:,.0f}")
+                    print(f"        LCOE: ${econ['lcoe_usd_per_mwh']:.2f}/MWh")
+
+            print(f"\nAll BI-LEVEL results saved to: {config.OUTPUT_DIR}/bilevel_*")
+            print("="*80 + "\n")
+
+            return all_scenario_results
+
+        else:
+            # Run single BI-LEVEL scenario
+            result = run_bilevel_scenario(scenario_selection, snapshots_index)
+            return result
+
+    else:
+        # ==================== SINGLE-LEVEL MODE (existing) ====================
+
+        # Initialize base technologies
+        base_technologies = initialize_all_technologies()
+
+        if scenario_selection == 'ALL':
+            # Run all scenarios
+            print("\n" + "#"*80)
+            print("# RUNNING ALL SCENARIOS (SINGLE-LEVEL)")
+            print("#"*80 + "\n")
+
+            all_scenario_results = {}
+
+            for sid in SCENARIOS.keys():
+                scenario = get_scenario(sid)
+
+                print(f"\n{'#'*80}")
+                print(f"# SCENARIO {sid}/{len(SCENARIOS)}: {scenario.name}")
+                print(f"{'#'*80}\n")
+
+                try:
+                    result = run_single_scenario_complete(
+                        scenario, time_horizon_config, base_technologies
+                    )
+                    all_scenario_results[sid] = result
+
+                except Exception as e:
+                    print(f"\n❌ Scenario {sid} failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    all_scenario_results[sid] = {'error': str(e)}
 
         # Final summary for all scenarios
         print("\n" + "="*80)
@@ -1338,16 +1526,16 @@ def main():
                 import traceback
                 traceback.print_exc()
 
-        print("="*80 + "\n")
+            print("="*80 + "\n")
 
-        return all_scenario_results
+            return all_scenario_results
 
-    else:
-        # Run single scenario
-        result = run_single_scenario_complete(
-            scenario_selection, time_horizon_config, base_technologies
-        )
-        return result
+        else:
+            # Run single scenario (SINGLE-LEVEL)
+            result = run_single_scenario_complete(
+                scenario_selection, time_horizon_config, base_technologies
+            )
+            return result
 
 
 if __name__ == "__main__":
