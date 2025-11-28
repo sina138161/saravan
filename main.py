@@ -40,6 +40,7 @@ from models.storage.thermal_storage import ThermalStorage
 
 # Import data generation and plotting
 from data import SaravanDataGenerator
+from plotting.system_plots import SystemVisualizer
 from plotting.nexus_plots import NexusVisualizer
 from plotting.carbon_plots import CarbonEmissionsVisualizer
 from plotting.publication_figures import PublicationVisualizer
@@ -874,14 +875,14 @@ def create_visualizations(network, individual_results, combined_results, compreh
         }
     }
 
-    # 1. Standard nexus plots
+    # 1. System-level plots (RECOMMENDED - Simple aggregated views)
     if config.CREATE_STANDARD_PLOTS:
-        print("\n1. Creating Standard Nexus Plots...")
+        print("\n1. Creating System-Level Plots (Aggregated by Technology)...")
         try:
-            nexus_viz = NexusVisualizer(dataset, network, results)
-            nexus_viz.create_all_plots()
+            system_viz = SystemVisualizer(network, dataset, results)
+            system_viz.create_all_plots()
         except Exception as e:
-            print(f"   Warning: Could not create nexus plots: {e}")
+            print(f"   Warning: Could not create system plots: {e}")
 
     # 2. Carbon emissions plots
     if config.CREATE_STANDARD_PLOTS:
@@ -912,6 +913,15 @@ def create_visualizations(network, individual_results, combined_results, compreh
             pub_viz.create_all_publication_figures()
         except Exception as e:
             print(f"   Warning: Could not create publication figures: {e}")
+
+    # 4. Detailed nexus plots (optional - shows individual units)
+    # if config.CREATE_STANDARD_PLOTS:
+    #     print("\n4. Creating Detailed Nexus Plots...")
+    #     try:
+    #         nexus_viz = NexusVisualizer(dataset, network, results)
+    #         nexus_viz.create_all_plots()
+    #     except Exception as e:
+    #         print(f"   Warning: Could not create nexus plots: {e}")
 
     print(f"\n✓ All visualizations saved to: {output_dir}")
 
