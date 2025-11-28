@@ -46,6 +46,15 @@ from plotting.carbon_plots import CarbonEmissionsVisualizer
 from plotting.publication_figures import PublicationVisualizer
 from models.carbon_market import CarbonMarketModel
 
+# Import scenario management
+from scenarios import SCENARIOS, get_scenario, list_scenarios
+from scenario_runner import (
+    apply_scenario_to_dataset,
+    apply_scenario_to_technologies,
+    apply_scenario_to_network,
+    save_scenario_results
+)
+
 
 def select_time_horizon():
     """
@@ -100,6 +109,46 @@ def select_time_horizon():
     print(f"  Snapshots: {snapshots} hours")
 
     return start_date, end_date, frequency, description, snapshots
+
+
+def select_scenario():
+    """
+    Interactive scenario selection
+
+    Returns:
+        ScenarioConfig: Selected scenario configuration
+    """
+    print("\n" + "="*80)
+    print("SCENARIO SELECTION")
+    print("="*80)
+
+    print("\nAvailable scenarios for analysis:\n")
+
+    # Display all scenarios
+    for sid, scenario in SCENARIOS.items():
+        print(f"  [{sid}] {scenario.name}")
+        print(f"      {scenario.description}")
+        print()
+
+    while True:
+        try:
+            choice = input("Enter scenario ID (S1, S2, S3, S4, S5) or 'ALL' to run all: ").strip().upper()
+
+            if choice == 'ALL':
+                print("\n✓ Selected: ALL scenarios will be run sequentially")
+                return 'ALL'
+            elif choice in SCENARIOS:
+                scenario = get_scenario(choice)
+                print(f"\n✓ Selected: {choice} - {scenario.name}")
+                return scenario
+            else:
+                print(f"Invalid choice. Please enter one of: {', '.join(SCENARIOS.keys())} or ALL")
+
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: {e}. Please try again.")
 
 
 def initialize_all_technologies():
@@ -926,6 +975,71 @@ def create_visualizations(network, individual_results, combined_results, compreh
     print(f"\n✓ All visualizations saved to: {output_dir}")
 
 
+def create_visualizations_for_scenario(network, results, technologies, dataset,
+                                       snapshots, time_description, output_dir):
+    """
+    Create all visualizations for a specific scenario
+
+    Args:
+        network: Optimized network
+        results: Results dictionary with 'individual', 'combined', 'comprehensive', etc.
+        technologies: Technology instances
+        dataset: Time series data
+        snapshots: Number of snapshots
+        time_description: Time horizon description
+        output_dir: Scenario-specific output directory
+    """
+    print("\n" + "="*80)
+    print("CREATING VISUALIZATIONS")
+    print("="*80)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. System-level plots (RECOMMENDED - Simple aggregated views)
+    if config.CREATE_STANDARD_PLOTS:
+        print("\n1. Creating System-Level Plots (Aggregated by Technology)...")
+        try:
+            system_viz = SystemVisualizer(
+                network, dataset, results,
+                output_dir=str(output_dir / 'system_plots')
+            )
+            system_viz.create_all_plots()
+        except Exception as e:
+            print(f"   Warning: Could not create system plots: {e}")
+
+    # 2. Carbon emissions plots
+    if config.CREATE_STANDARD_PLOTS:
+        print("\n2. Creating Carbon Emissions Plots...")
+        try:
+            carbon_viz = CarbonEmissionsVisualizer(
+                results,
+                technologies['carbon_market'],
+                output_dir=str(output_dir / 'carbon_plots')
+            )
+            carbon_viz.create_all_plots(
+                network,
+                results['comprehensive']['carbon']['co2_avoided_tons']
+            )
+        except Exception as e:
+            print(f"   Warning: Could not create carbon plots: {e}")
+
+    # 3. Publication-ready figures
+    if config.CREATE_PUBLICATION_FIGURES:
+        print("\n3. Creating Publication Figures...")
+        try:
+            pub_viz = PublicationVisualizer(
+                network,
+                results,
+                dataset,
+                output_dir=str(output_dir / 'publication_figures')
+            )
+            pub_viz.create_all_publication_figures()
+        except Exception as e:
+            print(f"   Warning: Could not create publication figures: {e}")
+
+    print(f"\n✓ All visualizations saved to: {output_dir}")
+
+
 def export_results(network, individual_results, combined_results, comprehensive_results,
                   snapshots, time_description):
     """
@@ -1015,21 +1129,28 @@ def export_results(network, individual_results, combined_results, comprehensive_
     print(f"\n✓ All results exported to: {output_dir}")
 
 
-def main():
-    """Main execution function"""
+def run_single_scenario_complete(scenario, time_horizon_config, base_technologies):
+    """
+    Run a complete scenario from start to finish
 
-    # Step 1: Select time horizon
-    start_date, end_date, frequency, time_description, snapshots = select_time_horizon()
+    Args:
+        scenario: ScenarioConfig object
+        time_horizon_config: Dictionary with time horizon parameters
+        base_technologies: Base technology instances
 
-    # Update config with selected time horizon
-    config.SNAPSHOTS_START = start_date
-    config.SNAPSHOTS_END = end_date
-    config.SNAPSHOTS_FREQ = frequency
+    Returns:
+        Dictionary with all results
+    """
 
-    # Step 2: Initialize all technologies
-    technologies = initialize_all_technologies()
+    # Display scenario info
+    print(scenario.get_display_info())
 
-    # Step 3: Generate synthetic data
+    # Extract time horizon parameters
+    start_date = time_horizon_config['start_date']
+    snapshots = time_horizon_config['snapshots']
+    time_description = time_horizon_config['description']
+
+    # Step 1: Generate synthetic data
     print("\n" + "="*80)
     print("GENERATING TIME SERIES DATA")
     print("="*80)
@@ -1041,14 +1162,29 @@ def main():
     )
     print(f"✓ Generated data for {snapshots} hours")
 
-    # Step 4: Build comprehensive network
+    # Apply scenario environmental conditions
+    dataset = apply_scenario_to_dataset(scenario, dataset)
+    print(f"✓ Applied scenario environmental conditions")
+
+    # Step 2: Apply scenario to technologies
+    print("\n" + "="*80)
+    print("APPLYING SCENARIO TO TECHNOLOGIES")
+    print("="*80)
+
+    technologies = apply_scenario_to_technologies(scenario, base_technologies)
+    print(f"✓ Applied scenario configuration to technologies")
+
+    # Step 3: Build comprehensive network
     network = build_comprehensive_network(technologies, dataset, snapshots)
+
+    # Step 4: Apply scenario to network
+    apply_scenario_to_network(scenario, network, dataset)
 
     # Step 5: Run optimization
     success = run_optimization(network)
 
     if not success:
-        print("\n✗ Optimization failed. Exiting.")
+        print("\n✗ Optimization failed for this scenario.")
         return None
 
     # Step 6: Calculate results at all levels
@@ -1062,41 +1198,141 @@ def main():
         network, individual_results, combined_results, snapshots
     )
 
-    # Step 7: Create visualizations
-    create_visualizations(
-        network, individual_results, combined_results, comprehensive_results,
-        technologies, dataset, snapshots, time_description
+    # Prepare results dictionary
+    results = {
+        'optimization': {
+            'status': 'ok',
+            'objective': network.objective
+        },
+        'individual': individual_results,
+        'combined': combined_results,
+        'comprehensive': comprehensive_results,
+        'carbon': {
+            'annual_energy_kwh': comprehensive_results['energy']['total_generation_kwh'],
+            'co2_avoided_tons': comprehensive_results['carbon']['co2_avoided_tons'],
+            'optimal_tier': scenario.carbon_tier if scenario.carbon_tier else 'None',
+            'carbon_revenue_annual': comprehensive_results['economics']['carbon_revenue_usd'],
+        }
+    }
+
+    # Step 7: Create scenario-specific output directory
+    output_dir = config.OUTPUT_DIR / scenario.get_folder_name()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Step 8: Create visualizations
+    create_visualizations_for_scenario(
+        network, results, technologies, dataset,
+        snapshots, time_description, output_dir
     )
 
-    # Step 8: Export results
-    export_results(
-        network, individual_results, combined_results, comprehensive_results,
-        snapshots, time_description
+    # Step 9: Save scenario results
+    save_scenario_results(
+        scenario, network, dataset, results, time_description
     )
 
-    # Final summary
+    # Summary
     print("\n" + "="*80)
-    print("EXECUTION COMPLETE")
+    print(f"SCENARIO {scenario.id} COMPLETE: {scenario.name}")
     print("="*80)
-    print(f"\nTime Horizon: {time_description}")
-    print(f"Snapshots: {snapshots} hours")
     print(f"\nKey Results:")
     print(f"  - Total Generation: {comprehensive_results['energy']['total_generation_kwh']:,.0f} kWh")
     print(f"  - Renewable Fraction: {comprehensive_results['energy']['renewable_fraction_pct']:.1f}%")
     print(f"  - CO2 Avoided: {comprehensive_results['carbon']['co2_avoided_tons']:,.0f} tons")
     print(f"  - Carbon Revenue: ${comprehensive_results['economics']['carbon_revenue_usd']:,.0f}")
     print(f"  - LCOE: ${comprehensive_results['economics']['lcoe_usd_per_mwh']:.2f}/MWh")
-    print(f"\nAll results saved to: {config.OUTPUT_DIR}")
+    print(f"\nResults saved to: {output_dir}")
     print("="*80 + "\n")
 
     return {
+        'scenario': scenario,
         'network': network,
-        'individual': individual_results,
-        'combined': combined_results,
-        'comprehensive': comprehensive_results,
+        'results': results,
         'technologies': technologies,
         'dataset': dataset,
     }
+
+
+def main():
+    """Main execution function with scenario support"""
+
+    # Step 1: Select time horizon
+    start_date, end_date, frequency, time_description, snapshots = select_time_horizon()
+
+    time_horizon_config = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'frequency': frequency,
+        'description': time_description,
+        'snapshots': snapshots
+    }
+
+    # Update config with selected time horizon
+    config.SNAPSHOTS_START = start_date
+    config.SNAPSHOTS_END = end_date
+    config.SNAPSHOTS_FREQ = frequency
+
+    # Step 2: Select scenario
+    scenario_selection = select_scenario()
+
+    # Step 3: Initialize base technologies
+    base_technologies = initialize_all_technologies()
+
+    # Step 4: Run scenario(s)
+    if scenario_selection == 'ALL':
+        # Run all scenarios
+        print("\n" + "#"*80)
+        print("# RUNNING ALL SCENARIOS")
+        print("#"*80 + "\n")
+
+        all_scenario_results = {}
+
+        for sid in SCENARIOS.keys():
+            scenario = get_scenario(sid)
+
+            print(f"\n{'#'*80}")
+            print(f"# SCENARIO {sid}/{len(SCENARIOS)}: {scenario.name}")
+            print(f"{'#'*80}\n")
+
+            try:
+                result = run_single_scenario_complete(
+                    scenario, time_horizon_config, base_technologies
+                )
+                all_scenario_results[sid] = result
+
+            except Exception as e:
+                print(f"\n❌ Scenario {sid} failed: {e}")
+                import traceback
+                traceback.print_exc()
+                all_scenario_results[sid] = {'error': str(e)}
+
+        # Final summary for all scenarios
+        print("\n" + "="*80)
+        print("ALL SCENARIOS COMPLETE")
+        print("="*80 + "\n")
+
+        print("Summary:")
+        for sid, result in all_scenario_results.items():
+            if 'error' in result:
+                print(f"  [{sid}] ❌ Failed: {result['error']}")
+            else:
+                scenario = result['scenario']
+                comp_results = result['results']['comprehensive']
+                print(f"  [{sid}] ✓ {scenario.name}")
+                print(f"        Renewable: {comp_results['energy']['renewable_fraction_pct']:.1f}%")
+                print(f"        CO2 Avoided: {comp_results['carbon']['co2_avoided_tons']:,.0f} tons")
+                print(f"        LCOE: ${comp_results['economics']['lcoe_usd_per_mwh']:.2f}/MWh")
+
+        print(f"\nAll results saved to: {config.OUTPUT_DIR}")
+        print("="*80 + "\n")
+
+        return all_scenario_results
+
+    else:
+        # Run single scenario
+        result = run_single_scenario_complete(
+            scenario_selection, time_horizon_config, base_technologies
+        )
+        return result
 
 
 if __name__ == "__main__":
