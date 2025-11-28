@@ -1350,6 +1350,104 @@ def run_bilevel_scenario(scenario, snapshots_index):
     }
 
 
+
+
+def run_level2_with_fixed_capacities(scenario, snapshots_index, optimal_capacities):
+    """
+    Run Level 2 (operational optimization) with fixed capacities from Level 1
+    
+    Args:
+        scenario: ScenarioConfig object
+        snapshots_index: pandas DatetimeIndex for optimization  
+        optimal_capacities: Dictionary with optimal capacities from Level 1
+    
+    Returns:
+        dict with operational results
+    """
+    print(f"\n{'='*80}")
+    print(f"LEVEL 2 (Operations): {scenario.name}")
+    print(f"{'='*80}\n")
+    print(f"Testing fixed capacities against scenario {scenario.id}...")
+    print(f"  Wind: {optimal_capacities.get('wind_total_kw', 0):.0f} kW")
+    print(f"  Battery: {optimal_capacities.get('battery_kwh', 0):.0f} kWh")
+    print(f"  Gas Turbine: {optimal_capacities.get('gas_turbine_kw', 0):.0f} kW")
+
+    # Generate data for this scenario
+    print("\n📊 Generating data for year 30...")
+    data_gen = SaravanDataGenerator()
+    dataset = data_gen.generate_complete_dataset(hours=8760)
+
+    # Create Level 2 optimizer with FIXED capacities from Level 1
+    from bi_level_config import BI_LEVEL_CONFIG
+    
+    # Create a modified config with fixed capacities (not extendable)
+    optimizer = BiLevelOptimizer(
+        scenario=scenario,
+        dataset=dataset,
+        snapshots=snapshots_index,
+        config_bilevel=BI_LEVEL_CONFIG
+    )
+    
+    # Build network but with FIXED capacities from Level 1
+    optimizer.build_expansion_network()
+    
+    # Fix the capacities to Level 1 values (disable expansion)
+    net = optimizer.network
+    
+    # Fix wind capacity
+    if 'Wind_Total' in net.generators.index:
+        net.generators.loc['Wind_Total', 'p_nom'] = optimal_capacities.get('wind_total_kw', 0)
+        net.generators.loc['Wind_Total', 'p_nom_extendable'] = False
+        
+    # Fix battery capacity
+    if 'Battery' in net.stores.index:
+        net.stores.loc['Battery', 'e_nom'] = optimal_capacities.get('battery_kwh', 0)
+        net.stores.loc['Battery', 'e_nom_extendable'] = False
+        
+    # Fix gas turbine
+    if 'Gas_Turbine_CHP' in net.generators.index:
+        net.generators.loc['Gas_Turbine_CHP', 'p_nom'] = optimal_capacities.get('gas_turbine_kw', 0)
+        net.generators.loc['Gas_Turbine_CHP', 'p_nom_extendable'] = False
+        
+    # Fix gas boiler
+    if 'Gas_Boiler' in net.generators.index:
+        net.generators.loc['Gas_Boiler', 'p_nom'] = optimal_capacities.get('gas_boiler_kw', 0)
+        net.generators.loc['Gas_Boiler', 'p_nom_extendable'] = False
+
+    print("\n🔒 Capacities fixed from Level 1 - optimizing operations only...")
+    
+    # Optimize operations only (dispatch)
+    status = optimizer.optimize(solver_name='glpk')
+    
+    if status != 'ok':
+        print(f"\n❌ Level 2 optimization failed with status: {status}")
+        return {'error': f'Optimization status: {status}'}
+    
+    # Extract results
+    results = optimizer.extract_results()
+    results['level'] = 'Level2_FixedCapacities'
+    results['reference_capacities'] = optimal_capacities
+    
+    # Save results
+    scenario_dir = config.OUTPUT_DIR / "bilevel_robust" / f"level2_{scenario.id}"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    
+    optimizer.save_results(scenario_dir)
+    
+    print(f"\n✅ Level 2 completed for {scenario.id}")
+    print(f"   Renewable fraction: {results['operations']['renewable_fraction_pct']:.1f}%")
+    print(f"   Total cost (operational): ${results['economics']['total_operational_cost_year30']:,.0f}")
+    
+    return {
+        'scenario': scenario,
+        'results': results,
+        'optimizer': optimizer,
+        'output_dir': scenario_dir,
+        'capacities_from_level1': optimal_capacities
+    }
+
+
+
 def main():
     """Main execution function with scenario support"""
 
@@ -1394,89 +1492,120 @@ def main():
     # Step 4: Run scenario(s) based on mode
     if opt_mode == 'BILEVEL':
         # ==================== BI-LEVEL MODE ====================
-
+        # NEW ROBUST PLANNING APPROACH:
+        # Level 1: Run ONCE with baseline scenario → Determine optimal capacities
+        # Level 2: Test those capacities against ALL scenarios
+        
         if scenario_selection == 'ALL':
-            # Run BI-LEVEL for all scenarios
+            # ========== LEVEL 1: CAPACITY PLANNING (BASELINE) ==========
             print("\n" + "#"*80)
-            print("# RUNNING BI-LEVEL OPTIMIZATION FOR ALL SCENARIOS")
+            print("# LEVEL 1: CAPACITY PLANNING WITH BASELINE SCENARIO")
             print("#"*80 + "\n")
-
-            all_scenario_results = {}
-
+            
+            baseline_scenario = get_scenario('S1')  # Use S1 as reference
+            
+            print(f"Running Level 1 with {baseline_scenario.name}...")
+            print("This determines the robust capacity that will be tested against all scenarios.\n")
+            
+            try:
+                level1_result = run_bilevel_scenario(baseline_scenario, snapshots_index)
+                
+                if 'error' in level1_result:
+                    print(f"\n❌ Level 1 failed: {level1_result['error']}")
+                    return {'error': 'Level 1 optimization failed'}
+                
+                # Extract optimal capacities from Level 1
+                optimal_capacities = level1_result['results']['optimal_capacities']
+                
+                print("\n" + "="*80)
+                print("LEVEL 1 COMPLETE - OPTIMAL CAPACITIES DETERMINED")
+                print("="*80)
+                print(f"\n  Wind Total: {optimal_capacities.get('wind_total_kw', 0):.0f} kW")
+                print(f"  Battery: {optimal_capacities.get('battery_kwh', 0):.0f} kWh")
+                print(f"  Gas Turbine: {optimal_capacities.get('gas_turbine_kw', 0):.0f} kW")
+                print(f"  Gas Boiler: {optimal_capacities.get('gas_boiler_kw', 0):.0f} kW")
+                print(f"\n  30-Year NPV (Baseline): ${level1_result['results']['economics']['total_npv_30_years_usd']:,.0f}")
+                print(f"  LCOE (Baseline): ${level1_result['results']['economics']['lcoe_usd_per_mwh']:.2f}/MWh")
+                
+                # Save Level 1 results
+                level1_dir = config.OUTPUT_DIR / "bilevel_robust" / "level1_baseline"
+                level1_dir.mkdir(parents=True, exist_ok=True)
+                level1_result['optimizer'].save_results(level1_dir)
+                
+            except Exception as e:
+                print(f"\n❌ Level 1 optimization failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return {'error': str(e)}
+            
+            # ========== LEVEL 2: TEST AGAINST ALL SCENARIOS ==========
+            print("\n" + "#"*80)
+            print("# LEVEL 2: TESTING FIXED CAPACITIES AGAINST ALL SCENARIOS")
+            print("#"*80 + "\n")
+            
+            print(f"Testing the designed system against {len(SCENARIOS)} scenarios...")
+            print("This shows how robust the capacity plan is to different futures.\n")
+            
+            all_level2_results = {}
+            
             for sid in SCENARIOS.keys():
                 scenario = get_scenario(sid)
-
+                
                 print(f"\n{'#'*80}")
-                print(f"# BI-LEVEL SCENARIO {sid}: {scenario.name}")
+                print(f"# LEVEL 2 - SCENARIO {sid}: {scenario.name}")
                 print(f"{'#'*80}\n")
-
+                
                 try:
-                    result = run_bilevel_scenario(scenario, snapshots_index)
-                    all_scenario_results[sid] = result
-
+                    level2_result = run_level2_with_fixed_capacities(
+                        scenario, snapshots_index, optimal_capacities
+                    )
+                    all_level2_results[sid] = level2_result
+                    
                 except Exception as e:
-                    print(f"\n❌ BI-LEVEL Scenario {sid} failed: {e}")
+                    print(f"\n❌ Level 2 Scenario {sid} failed: {e}")
                     import traceback
                     traceback.print_exc()
-                    all_scenario_results[sid] = {'error': str(e)}
-
-            # Summary for BI-LEVEL results
+                    all_level2_results[sid] = {'error': str(e)}
+            
+            # ========== SUMMARY ==========
             print("\n" + "="*80)
-            print("ALL BI-LEVEL SCENARIOS COMPLETE")
+            print("ROBUST BI-LEVEL OPTIMIZATION COMPLETE")
             print("="*80 + "\n")
-
-            print("Summary:")
-            for sid, result in all_scenario_results.items():
+            
+            print("Level 1 (Capacity Planning):")
+            print(f"  Baseline: {baseline_scenario.name}")
+            print(f"  Wind: {optimal_capacities.get('wind_total_kw', 0):.0f} kW")
+            print(f"  Battery: {optimal_capacities.get('battery_kwh', 0):.0f} kWh\n")
+            
+            print("Level 2 (Operational Testing):")
+            for sid, result in all_level2_results.items():
                 if 'error' in result:
                     print(f"  [{sid}] ❌ Failed: {result['error']}")
                 else:
                     scenario = result['scenario']
-                    econ = result['results']['economics']
                     ops = result['results']['operations']
-                    caps = result['results']['optimal_capacities']
-
+                    econ = result['results']['economics']
+                    
                     print(f"  [{sid}] ✓ {scenario.name}")
-                    print(f"        Optimal Wind: {caps.get('wind_total_kw', 0):.0f} kW")
-                    print(f"        Optimal Battery: {caps.get('battery_kwh', 0):.0f} kWh")
                     print(f"        Renewable: {ops['renewable_fraction_pct']:.1f}%")
-                    print(f"        30-year NPV: ${econ['total_npv_30_years_usd']:,.0f}")
-                    print(f"        LCOE: ${econ['lcoe_usd_per_mwh']:.2f}/MWh")
-
-            print(f"\nAll BI-LEVEL results saved to: {config.OUTPUT_DIR}/bilevel_*")
-
-            # Create BI-LEVEL comparison plots
-            successful_scenarios = [sid for sid, result in all_scenario_results.items() if 'error' not in result]
-
-            if len(successful_scenarios) > 1:
-                print("\n" + "="*80)
-                print("CREATING BI-LEVEL COMPARISON PLOTS")
-                print("="*80 + "\n")
-
-                try:
-                    from plotting.bilevel_comparison import BiLevelComparison
-
-                    bilevel_comp = BiLevelComparison(
-                        results_base_dir=config.OUTPUT_DIR,
-                        scenario_ids=successful_scenarios
-                    )
-                    bilevel_comp.create_all_comparison_plots()
-
-                    print(f"\n✅ BI-LEVEL comparison plots saved to: {config.OUTPUT_DIR / 'scenario_comparison'}/")
-                except Exception as e:
-                    print(f"\n⚠ Could not create BI-LEVEL comparison plots: {e}")
-                    import traceback
-                    traceback.print_exc()
-
-            print("="*80 + "\n")
-
-            return all_scenario_results
-
+                    print(f"        Load served: {ops.get('load_served_pct', 100):.1f}%")
+                    print(f"        Op. cost: ${econ.get('total_operational_cost_year30', 0):,.0f}")
+            
+            print(f"\nAll results saved to: {config.OUTPUT_DIR}/bilevel_robust/")
+            print("  - level1_baseline/  (capacity planning)")
+            print("  - level2_S1/ ... level2_S7/  (operational tests)\n")
+            
+            return {
+                'level1': level1_result,
+                'level2_all': all_level2_results,
+                'optimal_capacities': optimal_capacities
+            }
+        
         else:
-            # Run single BI-LEVEL scenario
+            # Run single BI-LEVEL scenario (original behavior)
             result = run_bilevel_scenario(scenario_selection, snapshots_index)
             return result
 
-    else:
         # ==================== SINGLE-LEVEL MODE (existing) ====================
 
         # Initialize base technologies
