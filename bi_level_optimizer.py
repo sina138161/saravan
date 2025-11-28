@@ -431,10 +431,20 @@ class BiLevelOptimizer:
         print(f"\n⚙️  Running BI-LEVEL optimization with {solver_name}...")
         print(f"   Variables: {len(self.network.generators)} generators, {len(self.network.stores)} stores")
         print(f"   Snapshots: {len(self.network.snapshots)}")
-        print(f"\n🔄 Solving optimization problem (this may take several minutes)...")\n        print(f"   Progress: [▓▓▓░░░░░░░] 30% - Building problem formulation...")\n\n        import time\n        start_time = time.time()\n\n        status = self.network.optimize(solver_name=solver_name)
-\n        elapsed_time = time.time() - start_time\n\n        print(f"   Progress: [▓▓▓▓▓▓▓▓▓▓] 100% - Complete!")\n        print(f"\n✅ Optimization status: {status}")
+        print(f"\n🔄 Solving optimization problem (this may take several minutes)...")
+        print(f"   Progress: [▓▓▓░░░░░░░] 30% - Building problem formulation...")
+
+        import time
+        start_time = time.time()
+
+        status = self.network.optimize(solver_name=solver_name)
+
+        elapsed_time = time.time() - start_time
+
+        print(f"   Progress: [▓▓▓▓▓▓▓▓▓▓] 100% - Complete!")
+        print(f"\n✅ Optimization status: {status}")
         print(f"   Objective value: ${self.network.objective:,.0f}")
-        print(f"   Time elapsed: {elapsed_time:.1f} seconds")\n
+        print(f"   Time elapsed: {elapsed_time:.1f} seconds")
         return status
 
     def extract_results(self) -> Dict:
