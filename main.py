@@ -50,7 +50,6 @@ from models.carbon_market import CarbonMarketModel
 from scenarios import SCENARIOS, get_scenario, list_scenarios
 from scenario_runner import (
     apply_scenario_to_dataset,
-    apply_scenario_to_technologies,
     apply_scenario_to_network,
     save_scenario_results
 )
@@ -1166,30 +1165,23 @@ def run_single_scenario_complete(scenario, time_horizon_config, base_technologie
     dataset = apply_scenario_to_dataset(scenario, dataset)
     print(f"✓ Applied scenario environmental conditions")
 
-    # Step 2: Apply scenario to technologies
-    print("\n" + "="*80)
-    print("APPLYING SCENARIO TO TECHNOLOGIES")
-    print("="*80)
+    # Step 2: Build comprehensive network with base technologies
+    # Optimizer will decide technology deployment based on scenario constraints
+    network = build_comprehensive_network(base_technologies, dataset, snapshots)
 
-    technologies = apply_scenario_to_technologies(scenario, base_technologies)
-    print(f"✓ Applied scenario configuration to technologies")
-
-    # Step 3: Build comprehensive network
-    network = build_comprehensive_network(technologies, dataset, snapshots)
-
-    # Step 4: Apply scenario to network
+    # Step 3: Apply scenario constraints to network
     apply_scenario_to_network(scenario, network, dataset)
 
-    # Step 5: Run optimization
+    # Step 4: Run optimization
     success = run_optimization(network)
 
     if not success:
         print("\n✗ Optimization failed for this scenario.")
         return None
 
-    # Step 6: Calculate results at all levels
+    # Step 5: Calculate results at all levels
     individual_results = calculate_individual_technology_results(
-        network, technologies, dataset, snapshots
+        network, base_technologies, dataset, snapshots
     )
 
     combined_results = calculate_combined_results(individual_results)
@@ -1215,17 +1207,17 @@ def run_single_scenario_complete(scenario, time_horizon_config, base_technologie
         }
     }
 
-    # Step 7: Create scenario-specific output directory
+    # Step 6: Create scenario-specific output directory
     output_dir = config.OUTPUT_DIR / scenario.get_folder_name()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 8: Create visualizations
+    # Step 7: Create visualizations
     create_visualizations_for_scenario(
-        network, results, technologies, dataset,
+        network, results, base_technologies, dataset,
         snapshots, time_description, output_dir
     )
 
-    # Step 9: Save scenario results
+    # Step 8: Save scenario results
     save_scenario_results(
         scenario, network, dataset, results, time_description
     )
