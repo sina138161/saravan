@@ -105,12 +105,12 @@ def apply_scenario_to_dataset(scenario: ScenarioConfig, dataset: Dict) -> Dict:
 
     # ===== APPLY DUST IMPACT =====
     if scenario.dust_severity != 'moderate' or scenario.dust_impact_factor != 0.85:
-        wind_speed = modified_dataset['wind']['speed_ms'].values.copy()
+        wind_speed = modified_dataset['wind']['wind_speed_ms'].values.copy()
 
         # Apply dust impact to wind speed (reduces effective generation)
         wind_speed = wind_speed * scenario.dust_impact_factor
 
-        modified_dataset['wind']['speed_ms'] = wind_speed
+        modified_dataset['wind']['wind_speed_ms'] = wind_speed
 
         # Adjust dust concentration
         dust_pm10 = modified_dataset['dust']['pm10_ugm3'].values.copy()

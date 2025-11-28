@@ -1239,7 +1239,7 @@ def run_single_scenario_complete(scenario, time_horizon_config, base_technologie
         'scenario': scenario,
         'network': network,
         'results': results,
-        'technologies': technologies,
+        'technologies': base_technologies,
         'dataset': dataset,
     }
 
