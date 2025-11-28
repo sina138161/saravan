@@ -1311,7 +1311,7 @@ def run_bilevel_scenario(scenario, snapshots_index):
     # Generate data for year 30
     print("📊 Generating data for year 30...")
     data_gen = SaravanDataGenerator()
-    dataset = data_gen.generate_all_data()
+    dataset = data_gen.generate_complete_dataset(hours=8760)
 
     # Create BI-LEVEL optimizer
     optimizer = BiLevelOptimizer(
