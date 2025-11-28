@@ -874,7 +874,7 @@ def create_visualizations(network, individual_results, combined_results, compreh
     if config.CREATE_STANDARD_PLOTS:
         print("\n1. Creating Standard Nexus Plots...")
         try:
-            nexus_viz = NexusVisualizer(network, results, dataset)
+            nexus_viz = NexusVisualizer(dataset, network, results)
             nexus_viz.create_all_plots()
         except Exception as e:
             print(f"   Warning: Could not create nexus plots: {e}")
