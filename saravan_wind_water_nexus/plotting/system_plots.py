@@ -335,7 +335,7 @@ class SystemVisualizer:
             tank_capacity = 0
 
         # Water demand
-        demand = self.dataset['water_demand']['total_m3'].values
+        demand = self.dataset['water_demand']['total_m3h'].values
 
         # Plot 1: Tank level
         ax1.plot(timestamps, tank_volume, color='#17becf', linewidth=2)
@@ -587,7 +587,7 @@ class SystemVisualizer:
         ax2.set_xticks(range(0, 24, 2))
 
         # 3. Water demand and tank level
-        water_demand_day = self.dataset['water_demand']['total_m3'].values[coldest_day_mask]
+        water_demand_day = self.dataset['water_demand']['total_m3h'].values[coldest_day_mask]
 
         if 'Water_Tank' in self.network.stores.index:
             tank_volume = self.network.stores_t.e['Water_Tank'].iloc[coldest_day_hours].values
@@ -707,7 +707,7 @@ class SystemVisualizer:
         ax1.set_xticks(range(0, 24, 2))
 
         # 2. Water demand and production (critical in summer)
-        water_demand_day = self.dataset['water_demand']['total_m3'].values[hottest_day_mask]
+        water_demand_day = self.dataset['water_demand']['total_m3h'].values[hottest_day_mask]
 
         if 'Water_Tank' in self.network.stores.index:
             tank_volume = self.network.stores_t.e['Water_Tank'].iloc[hottest_day_hours].values
