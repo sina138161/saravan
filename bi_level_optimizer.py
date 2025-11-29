@@ -344,7 +344,7 @@ class BiLevelOptimizer:
         # ==================== WATER SYSTEM (EXTENDABLE) ====================
 
         # Groundwater availability
-        groundwater_available = self.modified_dataset['groundwater']['total_m3h'].values[:hours]
+        groundwater_available = self.modified_dataset['groundwater']['gw_safe_extraction_m3h'].values[:hours]
 
         network.add(
             "Generator",
