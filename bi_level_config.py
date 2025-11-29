@@ -45,6 +45,9 @@ class BiLevelConfig:
     hawt_max_capacity_kw: float = 1000.0
     """حداکثر ظرفیت HAWT قابل نصب: 1 MW"""
 
+    hawt_max_annual_expansion_kw: float = 100.0
+    """حداکثر توسعه سالانه HAWT: 100 kW/year"""
+
     # Bladeless Wind Turbine
     bladeless_rated_power_kw: float = 3.0
     """توان اسمی Bladeless: 3 kW"""
@@ -60,6 +63,9 @@ class BiLevelConfig:
 
     bladeless_max_capacity_kw: float = 500.0
     """حداکثر ظرفیت Bladeless: 500 kW"""
+
+    bladeless_max_annual_expansion_kw: float = 50.0
+    """حداکثر توسعه سالانه Bladeless: 50 kW/year"""
 
     # ==================== BATTERY STORAGE ====================
     battery_capex_usd_per_kwh: float = 500.0
@@ -80,6 +86,9 @@ class BiLevelConfig:
     battery_max_power_kw: float = 2000.0
     """حداکثر توان شارژ/دشارژ: 2 MW"""
 
+    battery_max_annual_expansion_kwh: float = 500.0
+    """حداکثر توسعه سالانه باتری: 500 kWh/year"""
+
     # ==================== GAS MICROTURBINE ====================
     gas_turbine_capex_usd_per_kw: float = 800.0
     """هزینه سرمایه‌گذاری میکروتوربین: 800 $/kW"""
@@ -93,8 +102,14 @@ class BiLevelConfig:
     gas_turbine_max_capacity_kw: float = 1000.0
     """حداکثر ظرفیت میکروتوربین: 1 MW"""
 
+    gas_turbine_max_annual_expansion_kw: float = 100.0
+    """حداکثر توسعه سالانه میکروتوربین: 100 kW/year"""
+
     gas_fuel_cost_usd_per_kwh: float = 0.05
-    """قیمت سوخت گاز: 0.05 $/kWh (پایه)"""
+    """قیمت سوخت گاز: 0.05 $/kWh (سال اول)"""
+
+    gas_price_growth_rate: float = 0.05
+    """نرخ رشد سالانه قیمت گاز: 5%/year"""
 
     gas_turbine_efficiency: float = 0.30
     """بازده الکتریکی میکروتوربین: 30%"""
@@ -111,6 +126,9 @@ class BiLevelConfig:
 
     gas_boiler_max_capacity_kw: float = 500.0
     """حداکثر ظرفیت بویلر: 500 kW"""
+
+    gas_boiler_max_annual_expansion_kw: float = 50.0
+    """حداکثر توسعه سالانه بویلر: 50 kW/year"""
 
     gas_boiler_efficiency: float = 0.85
     """بازده حرارتی بویلر: 85%"""
@@ -177,10 +195,19 @@ class BiLevelConfig:
     """هزینه اتصال به شبکه: 100,000 $"""
 
     grid_import_price_usd_per_kwh: float = 0.10
-    """قیمت خرید از شبکه: 0.10 $/kWh (پایه)"""
+    """قیمت خرید از شبکه: 0.10 $/kWh (سال اول)"""
 
-    grid_export_price_usd_per_kwh: float = 0.08
-    """قیمت فروش به شبکه: 0.08 $/kWh"""
+    grid_import_price_growth_rate: float = 0.03
+    """نرخ رشد سالانه قیمت خرید برق: 3%/year"""
+
+    grid_export_price_renewable_usd_per_kwh: float = 0.12
+    """قیمت فروش برق تجدیدپذیر به شبکه: 0.12 $/kWh (سال اول - بالاتر از فسیلی)"""
+
+    grid_export_price_fossil_usd_per_kwh: float = 0.08
+    """قیمت فروش برق فسیلی به شبکه: 0.08 $/kWh (سال اول)"""
+
+    grid_export_price_growth_rate: float = 0.04
+    """نرخ رشد سالانه قیمت فروش برق: 4%/year"""
 
     grid_max_import_kw: float = 500.0
     """حداکثر توان import از شبکه: 500 kW"""
@@ -200,6 +227,49 @@ class BiLevelConfig:
 
     mazut_co2_intensity_ton_per_mwh: float = 0.28
     """شدت انتشار مازوت: 0.28 ton CO2/MWh"""
+
+    carbon_budget_ton_per_year: float = 1000.0
+    """بودجه کربن سالانه: 1000 ton CO2/year (حداکثر مجاز انتشارات)"""
+
+    # ==================== WATER TREATMENT ====================
+    water_treatment_primary_capex_usd_per_m3h: float = 500.0
+    """هزینه سرمایه‌گذاری تصفیه اولیه: 500 $/(m³/h)"""
+
+    water_treatment_primary_om_usd_per_m3: float = 0.05
+    """هزینه نگهداری تصفیه اولیه: 0.05 $/m³"""
+
+    water_treatment_primary_power_kwh_per_m3: float = 0.3
+    """مصرف برق تصفیه اولیه: 0.3 kWh/m³"""
+
+    water_treatment_secondary_capex_usd_per_m3h: float = 800.0
+    """هزینه سرمایه‌گذاری تصفیه ثانویه: 800 $/(m³/h)"""
+
+    water_treatment_secondary_om_usd_per_m3: float = 0.10
+    """هزینه نگهداری تصفیه ثانویه: 0.10 $/m³"""
+
+    water_treatment_secondary_power_kwh_per_m3: float = 0.5
+    """مصرف برق تصفیه ثانویه: 0.5 kWh/m³"""
+
+    wastewater_treatment_primary_capex_usd_per_m3h: float = 600.0
+    """هزینه سرمایه‌گذاری تصفیه فاضلاب اولیه: 600 $/(m³/h)"""
+
+    wastewater_treatment_primary_om_usd_per_m3: float = 0.08
+    """هزینه نگهداری تصفیه فاضلاب اولیه: 0.08 $/m³"""
+
+    wastewater_treatment_primary_power_kwh_per_m3: float = 0.4
+    """مصرف برق تصفیه فاضلاب اولیه: 0.4 kWh/m³"""
+
+    wastewater_treatment_secondary_capex_usd_per_m3h: float = 1000.0
+    """هزینه سرمایه‌گذاری تصفیه فاضلاب ثانویه: 1000 $/(m³/h)"""
+
+    wastewater_treatment_secondary_om_usd_per_m3: float = 0.15
+    """هزینه نگهداری تصفیه فاضلاب ثانویه: 0.15 $/m³"""
+
+    wastewater_treatment_secondary_power_kwh_per_m3: float = 0.7
+    """مصرف برق تصفیه فاضلاب ثانویه: 0.7 kWh/m³"""
+
+    water_treatment_lifetime_years: int = 25
+    """عمر مفید سیستم‌های تصفیه آب: 25 سال"""
 
     # ==================== METHODS ====================
 
