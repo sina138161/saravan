@@ -322,12 +322,20 @@ class BiLevelOptimizer:
             carrier="grid"
         )
 
-        # Grid export
+        # Grid export (as optional revenue source via Link to sink)
+        # First add a sink bus for grid export
+        network.add("Bus", "Grid_Sink")
+
+        # Grid export as Link (optional dispatch up to max capacity)
         network.add(
-            "Load",
+            "Link",
             "Grid_Export",
-            bus="Main_Bus",
-            p_set=-cfg.grid_max_export_kw * np.ones(hours),  # Negative load = export capacity
+            bus0="Main_Bus",
+            bus1="Grid_Sink",
+            p_nom=cfg.grid_max_export_kw,
+            p_max_pu=grid_availability,  # Same availability as import
+            efficiency=1.0,
+            marginal_cost=-cfg.grid_export_price_usd_per_kwh,  # Negative cost = revenue
             carrier="grid"
         )
 
@@ -617,6 +625,9 @@ class BiLevelOptimizer:
 
         grid_import = net.generators_t.p['Grid_Import'].sum() if 'Grid_Import' in net.generators_t.p.columns else 0
 
+        # Grid export (now a Link)
+        grid_export = net.links_t.p0['Grid_Export'].sum() if 'Grid_Export' in net.links_t.p0.columns else 0
+
         biogas_gen = 0
         if 'Biogas_Generator' in net.links_t.p1.columns:
             biogas_gen = net.links_t.p1['Biogas_Generator'].sum()
@@ -628,6 +639,7 @@ class BiLevelOptimizer:
             'wind_generation_kwh': wind_gen_total,
             'biogas_generation_kwh': biogas_gen,
             'grid_import_kwh': grid_import,
+            'grid_export_kwh': grid_export,
             'gas_consumption_kwh': gas_consumption,
             'renewable_fraction_pct': renewable_fraction * 100,
         }
@@ -635,7 +647,8 @@ class BiLevelOptimizer:
         print("\n⚡ OPERATIONS (Year 30):")
         print(f"  Wind: {operations['wind_generation_kwh']:,.0f} kWh")
         print(f"  Biogas: {operations['biogas_generation_kwh']:,.0f} kWh")
-        print(f"  Grid: {operations['grid_import_kwh']:,.0f} kWh")
+        print(f"  Grid Import: {operations['grid_import_kwh']:,.0f} kWh")
+        print(f"  Grid Export: {operations['grid_export_kwh']:,.0f} kWh")
         print(f"  Renewable: {operations['renewable_fraction_pct']:.1f}%")
 
         # ==================== EMISSIONS ====================
