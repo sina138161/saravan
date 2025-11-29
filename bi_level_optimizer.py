@@ -432,6 +432,26 @@ class BiLevelOptimizer:
         print(f"   Variables: {len(self.network.generators)} generators, {len(self.network.stores)} stores")
         print(f"   Snapshots: {len(self.network.snapshots)}")
         print(f"\n🔄 Solving optimization problem (this may take several minutes)...")
+        
+        # Quick feasibility check
+        print("\n🔍 Checking problem feasibility...")
+        total_demand_elec = sum([self.network.loads_t.p_set[load].sum() 
+                                  for load in self.network.loads.index 
+                                  if self.network.loads.loc[load, "bus"] == "Main_Bus"])
+        
+        total_gen_capacity = sum([self.network.generators.loc[gen, "p_nom_max"] 
+                                   for gen in self.network.generators.index
+                                   if self.network.generators.loc[gen, "bus"] == "Main_Bus"
+                                   and self.network.generators.loc[gen, "p_nom_extendable"]])
+        
+        print(f"   Total electricity demand (sum): {total_demand_elec:,.0f} kWh")
+        print(f"   Max generator capacity: {total_gen_capacity:,.0f} kW")
+        if total_gen_capacity > 0:
+            hours_coverage = total_gen_capacity * len(self.network.snapshots)
+            print(f"   Theoretical max generation: {hours_coverage:,.0f} kWh")
+            if total_demand_elec > hours_coverage:
+                print(f"   ⚠️  WARNING: Demand may exceed maximum possible generation!")
+        
         print(f"   Progress: [▓▓▓░░░░░░░] 30% - Building problem formulation...")
 
         import time
@@ -441,18 +461,23 @@ class BiLevelOptimizer:
 
         elapsed_time = time.time() - start_time
 
-        print(f"   Progress: [▓▓▓▓▓▓▓▓▓▓] 100% - Complete!")
-        print(f"\n{'✅' if status == 'ok' else '❌'} Optimization status: {status}")
+        # Handle status (can be string or tuple)
+        status_str = status if isinstance(status, str) else status[0] if isinstance(status, tuple) else str(status)
+        is_ok = status_str == 'ok'
 
-        if status == 'ok' and hasattr(self.network, 'objective'):
+        print(f"   Progress: [▓▓▓▓▓▓▓▓▓▓] 100% - Complete!")
+        print(f"\n{'✅' if is_ok else '❌'} Optimization status: {status}")
+
+        if is_ok and hasattr(self.network, 'objective'):
             print(f"   Objective value: ${self.network.objective:,.0f}")
-        elif status != 'ok':
+        elif not is_ok:
             print(f"   ⚠️  Optimization did not converge successfully")
             print(f"   Status: {status}")
             print(f"\n   Common causes:")
             print(f"   - Problem is infeasible (constraints too tight)")
             print(f"   - Problem is unbounded (missing constraints)")
             print(f"   - Solver numerical issues")
+            print(f"   - Try different solver or adjust solver options")
 
         print(f"   Time elapsed: {elapsed_time:.1f} seconds")
         return status

@@ -1327,7 +1327,11 @@ def run_bilevel_scenario(scenario, snapshots_index):
     # Optimize
     status = optimizer.optimize(solver_name='glpk')
 
-    if status != 'ok':
+    # Handle status (can be string or tuple)
+    status_str = status if isinstance(status, str) else (status[0] if isinstance(status, tuple) else str(status))
+    is_ok = status_str == 'ok'
+
+    if not is_ok:
         print(f"\n❌ Optimization failed with status: {status}")
         return {'error': f'Optimization status: {status}'}
 
@@ -1418,8 +1422,12 @@ def run_level2_with_fixed_capacities(scenario, snapshots_index, optimal_capaciti
     
     # Optimize operations only (dispatch)
     status = optimizer.optimize(solver_name='glpk')
-    
-    if status != 'ok':
+
+    # Handle status (can be string or tuple)
+    status_str = status if isinstance(status, str) else (status[0] if isinstance(status, tuple) else str(status))
+    is_ok = status_str == 'ok'
+
+    if not is_ok:
         print(f"\n❌ Level 2 optimization failed with status: {status}")
         return {'error': f'Optimization status: {status}'}
     
