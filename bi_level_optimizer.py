@@ -267,26 +267,27 @@ class BiLevelOptimizer:
             carrier="biogas"
         )
 
-        # Biogas to electricity
-        biogas_gen_capex = cfg.calculate_annualized_capex(
-            cfg.biogas_generator_capex_usd_per_kw,
+        # Biogas upgrading/cleaning to feed into gas system
+        # This allows biogas to be used by CHP (Gas_Microturbine) and Gas_Boiler
+        biogas_upgrade_capex = cfg.calculate_annualized_capex(
+            cfg.biogas_generator_capex_usd_per_kw * 0.5,  # Upgrading cheaper than generator
             cfg.biogas_generator_lifetime_years
         )
 
         network.add(
             "Link",
-            "Biogas_Generator",
+            "Biogas_Upgrading",
             bus0="Biogas_Bus",
-            bus1="Main_Bus",
+            bus1="Gas_Bus",
             p_nom_extendable=True,
             p_nom_max=cfg.biogas_generator_max_capacity_kw,
-            capital_cost=biogas_gen_capex,
-            marginal_cost=0.02,
-            efficiency=0.35,
+            capital_cost=biogas_upgrade_capex,
+            marginal_cost=0.02,  # Operating cost for upgrading
+            efficiency=0.90,  # Biogas to gas equivalent efficiency
             carrier="biogas"
         )
 
-        print(f"  🌾 Biogas Generator (extendable): Max {cfg.biogas_generator_max_capacity_kw} kW")
+        print(f"  🌾 Biogas Upgrading (extendable): Max {cfg.biogas_generator_max_capacity_kw} kW → feeds to CHP/Boiler")
 
         # ==================== GRID CONNECTION ====================
 
@@ -341,23 +342,105 @@ class BiLevelOptimizer:
 
         print(f"  🔌 Grid: Import {cfg.grid_max_import_kw} kW, Export {cfg.grid_max_export_kw} kW")
 
-        # ==================== WATER SYSTEM (EXTENDABLE) ====================
+        # ==================== WATER SYSTEM WITH TREATMENT (EXTENDABLE) ====================
 
-        # Groundwater availability
+        # Create buses for water treatment stages
+        network.add("Bus", "Raw_Water_Bus", carrier="water")
+        network.add("Bus", "Pumped_Water_Bus", carrier="water")
+        network.add("Bus", "Primary_Treated_Water_Bus", carrier="water")
+        network.add("Bus", "Clean_Water_Bus", carrier="water")  # Final clean water
+        network.add("Bus", "Wastewater_Bus", carrier="water")
+        network.add("Bus", "Primary_WW_Bus", carrier="water")
+        network.add("Bus", "Treated_WW_Bus", carrier="water")
+
+        # Groundwater extraction
         groundwater_available = self.modified_dataset['groundwater']['gw_safe_extraction_m3h'].values[:hours]
 
         network.add(
             "Generator",
             "Groundwater_Supply",
-            bus="Water_Bus",
-            p_nom=np.max(groundwater_available) * 1.2,  # Slightly higher than max
+            bus="Raw_Water_Bus",
+            p_nom=np.max(groundwater_available) * 1.2,
             p_max_pu=groundwater_available / (np.max(groundwater_available) * 1.2),
-            marginal_cost=cfg.water_extraction_cost_usd_per_m3 if hasattr(cfg, 'water_extraction_cost_usd_per_m3') else 0.01,
+            marginal_cost=0.01,  # Extraction cost
             carrier="water"
         )
 
-        print(f"  💧 Groundwater: Max {np.max(groundwater_available):.1f} m³/h")
+        # Stage 1: Water Pumping (Raw → Pumped, consumes electricity)
+        pump_capex = cfg.calculate_annualized_capex(cfg.water_pump_capex_usd_per_kw, 20)
 
+        network.add(
+            "Link",
+            "Water_Pumping",
+            bus0="Main_Bus",  # Electricity input
+            bus1="Pumped_Water_Bus",  # Water output
+            bus2="Raw_Water_Bus",  # Water input (negative efficiency2)
+            p_nom_extendable=True,
+            p_nom_max=cfg.water_pump_max_power_kw,
+            capital_cost=pump_capex,
+            marginal_cost=0.005,
+            efficiency=10.0,  # kW → m³/h (1 kW pumps ~10 m³/h)
+            efficiency2=-10.0,  # Consumes from Raw_Water_Bus
+            carrier="water"
+        )
+
+        # Stage 2: Primary Groundwater Treatment (consumes electricity)
+        primary_treat_capex = cfg.calculate_annualized_capex(
+            cfg.water_treatment_primary_capex_usd_per_m3h,
+            cfg.water_treatment_lifetime_years
+        )
+
+        network.add(
+            "Link",
+            "GW_Primary_Treatment",
+            bus0="Pumped_Water_Bus",  # Water input
+            bus1="Primary_Treated_Water_Bus",  # Water output
+            p_nom_extendable=True,
+            p_nom_max=200.0,  # Max 200 m³/h
+            capital_cost=primary_treat_capex,
+            marginal_cost=cfg.water_treatment_primary_om_usd_per_m3,
+            efficiency=0.95,  # 5% water loss
+            carrier="water"
+        )
+
+        # Electricity consumption for primary treatment (separate link)
+        network.add(
+            "Load",
+            "GW_Primary_Treatment_Power",
+            bus="Main_Bus",
+            p_set=water_demand * cfg.water_treatment_primary_power_kwh_per_m3 * 0.95,  # Approximate
+            carrier="electricity"
+        )
+
+        # Stage 3: Secondary Groundwater Treatment (consumes electricity)
+        secondary_treat_capex = cfg.calculate_annualized_capex(
+            cfg.water_treatment_secondary_capex_usd_per_m3h,
+            cfg.water_treatment_lifetime_years
+        )
+
+        network.add(
+            "Link",
+            "GW_Secondary_Treatment",
+            bus0="Primary_Treated_Water_Bus",
+            bus1="Clean_Water_Bus",
+            p_nom_extendable=True,
+            p_nom_max=200.0,
+            capital_cost=secondary_treat_capex,
+            marginal_cost=cfg.water_treatment_secondary_om_usd_per_m3,
+            efficiency=0.98,  # 2% water loss
+            carrier="water"
+        )
+
+        # Electricity consumption for secondary treatment
+        network.add(
+            "Load",
+            "GW_Secondary_Treatment_Power",
+            bus="Main_Bus",
+            p_set=water_demand * cfg.water_treatment_secondary_power_kwh_per_m3 * 0.98,
+            carrier="electricity"
+        )
+
+        # Clean water storage
         water_tank_capex = cfg.calculate_annualized_capex(
             cfg.water_tank_capex_usd_per_m3,
             cfg.water_tank_lifetime_years
@@ -366,32 +449,66 @@ class BiLevelOptimizer:
         network.add(
             "Store",
             "Water_Tank",
-            bus="Water_Bus",
+            bus="Clean_Water_Bus",
             e_nom_extendable=True,
             e_nom_max=cfg.water_tank_max_volume_m3,
-            capital_cost=water_tank_capex,  # $/m³/year
+            capital_cost=water_tank_capex,
             standing_loss=0.001,
             carrier="water"
         )
 
-        # Water pump (electricity to water)
+        # Wastewater generation (assume 80% of water used becomes wastewater)
         network.add(
-            "Link",
-            "Water_Pump",
-            bus0="Main_Bus",
-            bus1="Water_Bus",
-            p_nom_extendable=True,
-            p_nom_max=cfg.water_pump_max_power_kw,
-            capital_cost=cfg.calculate_annualized_capex(
-                cfg.water_pump_capex_usd_per_kw,
-                20  # pump lifetime
-            ),
-            marginal_cost=0.005,
-            efficiency=0.75,  # Electric to hydraulic
+            "Generator",
+            "Wastewater_Generation",
+            bus="Wastewater_Bus",
+            p_nom=np.max(water_demand) * 0.8,
+            p_max_pu=(water_demand * 0.8) / (np.max(water_demand) * 0.8 + 1e-6),
+            marginal_cost=0.0,  # No cost for generation (it's waste)
             carrier="water"
         )
 
-        print(f"  💧 Water Tank (extendable): Max {cfg.water_tank_max_volume_m3} m³")
+        # Stage 4: Primary Wastewater Treatment
+        ww_primary_capex = cfg.calculate_annualized_capex(
+            cfg.wastewater_treatment_primary_capex_usd_per_m3h,
+            cfg.water_treatment_lifetime_years
+        )
+
+        network.add(
+            "Link",
+            "WW_Primary_Treatment",
+            bus0="Wastewater_Bus",
+            bus1="Primary_WW_Bus",
+            p_nom_extendable=True,
+            p_nom_max=200.0,
+            capital_cost=ww_primary_capex,
+            marginal_cost=cfg.wastewater_treatment_primary_om_usd_per_m3,
+            efficiency=0.92,
+            carrier="water"
+        )
+
+        # Stage 5: Secondary Wastewater Treatment (produces reusable water)
+        ww_secondary_capex = cfg.calculate_annualized_capex(
+            cfg.wastewater_treatment_secondary_capex_usd_per_m3h,
+            cfg.water_treatment_lifetime_years
+        )
+
+        network.add(
+            "Link",
+            "WW_Secondary_Treatment",
+            bus0="Primary_WW_Bus",
+            bus1="Treated_WW_Bus",  # Can be discharged or reused
+            p_nom_extendable=True,
+            p_nom_max=200.0,
+            capital_cost=ww_secondary_capex,
+            marginal_cost=cfg.wastewater_treatment_secondary_om_usd_per_m3,
+            efficiency=0.95,
+            carrier="water"
+        )
+
+        print(f"  💧 Water System: 5 treatment stages implemented")
+        print(f"     Groundwater: Max {np.max(groundwater_available):.1f} m³/h")
+        print(f"     Storage: Max {cfg.water_tank_max_volume_m3} m³")
 
         # ==================== LOADS/DEMANDS ====================
 
@@ -415,12 +532,12 @@ class BiLevelOptimizer:
             carrier="heat"
         )
 
-        # Water demand
+        # Water demand (served from clean water bus)
         water_demand = self.modified_dataset['water_demand']['total_m3h'].values[:hours]
         network.add(
             "Load",
             "Water_Demand",
-            bus="Water_Bus",
+            bus="Clean_Water_Bus",
             p_set=water_demand,
             carrier="water"
         )
