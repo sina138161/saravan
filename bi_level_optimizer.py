@@ -432,26 +432,31 @@ class BiLevelOptimizer:
         print(f"   Variables: {len(self.network.generators)} generators, {len(self.network.stores)} stores")
         print(f"   Snapshots: {len(self.network.snapshots)}")
         print(f"\n🔄 Solving optimization problem (this may take several minutes)...")
-        
+
         # Quick feasibility check
         print("\n🔍 Checking problem feasibility...")
-        total_demand_elec = sum([self.network.loads_t.p_set[load].sum() 
-                                  for load in self.network.loads.index 
-                                  if self.network.loads.loc[load, "bus"] == "Main_Bus"])
-        
-        total_gen_capacity = sum([self.network.generators.loc[gen, "p_nom_max"] 
+
+        # Only count actual demands (positive), exclude exports (negative like Grid_Export)
+        total_demand_elec = sum([self.network.loads_t.p_set[load].sum()
+                                  for load in self.network.loads.index
+                                  if self.network.loads.loc[load, "bus"] == "Main_Bus"
+                                  and load != "Grid_Export"])  # Exclude grid export
+
+        total_gen_capacity = sum([self.network.generators.loc[gen, "p_nom_max"]
                                    for gen in self.network.generators.index
                                    if self.network.generators.loc[gen, "bus"] == "Main_Bus"
                                    and self.network.generators.loc[gen, "p_nom_extendable"]])
-        
-        print(f"   Total electricity demand (sum): {total_demand_elec:,.0f} kWh")
-        print(f"   Max generator capacity: {total_gen_capacity:,.0f} kW")
+
+        print(f"   Electricity demand (excluding exports): {total_demand_elec:,.0f} kWh")
+        print(f"   Max extendable generator capacity: {total_gen_capacity:,.0f} kW")
         if total_gen_capacity > 0:
             hours_coverage = total_gen_capacity * len(self.network.snapshots)
             print(f"   Theoretical max generation: {hours_coverage:,.0f} kWh")
             if total_demand_elec > hours_coverage:
-                print(f"   ⚠️  WARNING: Demand may exceed maximum possible generation!")
-        
+                print(f"   ⚠️  WARNING: Demand ({total_demand_elec:,.0f} kWh) exceeds max possible generation ({hours_coverage:,.0f} kWh)!")
+        else:
+            print(f"   ⚠️  WARNING: No extendable generators found!")
+
         print(f"   Progress: [▓▓▓░░░░░░░] 30% - Building problem formulation...")
 
         import time
