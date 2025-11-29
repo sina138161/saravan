@@ -343,6 +343,21 @@ class BiLevelOptimizer:
 
         # ==================== WATER SYSTEM (EXTENDABLE) ====================
 
+        # Groundwater availability
+        groundwater_available = self.modified_dataset['groundwater']['total_m3h'].values[:hours]
+
+        network.add(
+            "Generator",
+            "Groundwater_Supply",
+            bus="Water_Bus",
+            p_nom=np.max(groundwater_available) * 1.2,  # Slightly higher than max
+            p_max_pu=groundwater_available / (np.max(groundwater_available) * 1.2),
+            marginal_cost=cfg.water_extraction_cost_usd_per_m3 if hasattr(cfg, 'water_extraction_cost_usd_per_m3') else 0.01,
+            carrier="water"
+        )
+
+        print(f"  💧 Groundwater: Max {np.max(groundwater_available):.1f} m³/h")
+
         water_tank_capex = cfg.calculate_annualized_capex(
             cfg.water_tank_capex_usd_per_m3,
             cfg.water_tank_lifetime_years
